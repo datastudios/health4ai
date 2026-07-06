@@ -465,39 +465,73 @@ def get_sleep(days: int = 7) -> dict:
     """
     Sleep analysis for the past N days.
     Returns per-night breakdown with stage durations (REM, Deep/Core, Light, Awake).
+    Source priority: Oura (most accurate) > Apple Watch. Per night, only one source
+    is used — whichever has higher priority — to avoid double-counting.
     """
     uid = current_user_id.get()
     since = _since(days)
-    # Oura Ring syncs sleep stages to Apple Health — use as the single sleep source.
-    # Apple Watch also writes stages; summing both would double-count every night.
-    rows = _fetch_metrics(SLEEP, uid, since, limit=500, source_filter="Oura")
-
-    nights: dict[str, dict] = {}
+    # Fetch both Oura and Apple Watch; we select one source per night below.
+    rows = _fetch_metrics(SLEEP, uid, since, limit=1000)
 
     # HKCategoryValueSleepAnalysis: 0=InBed, 1=AsleepUnspecified, 2=Awake,
     # 3=AsleepCore, 4=AsleepDeep, 5=AsleepREM. Only count 3/4/5 (true sleep stages).
     _STAGE_NAMES = {3.0: "core", 4.0: "deep", 5.0: "rem"}
+    _ACCEPTED_SOURCES = ("oura", "apple watch")
 
+    def _source_priority(device: str) -> int:
+        d = (device or "").lower()
+        if "oura" in d:
+            return 1
+        if "apple watch" in d:
+            return 2
+        return 9
+
+    # First pass: determine best source per night
+    night_best_priority: dict[str, int] = {}
     for row in rows:
+        device = row.get("source_device", "") or ""
+        if not any(s in device.lower() for s in _ACCEPTED_SOURCES):
+            continue
+        if row.get("value") not in _STAGE_NAMES:
+            continue
+        started = str(row.get("started_at", ""))
+        if not started:
+            continue
+        start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+        night_key = (start_dt - timedelta(hours=6)).strftime("%Y-%m-%d")
+        p = _source_priority(device)
+        if night_key not in night_best_priority or p < night_best_priority[night_key]:
+            night_best_priority[night_key] = p
+
+    # Second pass: build nights using only the best source per night
+    nights: dict[str, dict] = {}
+    for row in rows:
+        device = row.get("source_device", "") or ""
+        if not any(s in device.lower() for s in _ACCEPTED_SOURCES):
+            continue
         val = row.get("value")
         if val not in _STAGE_NAMES:
             continue
-
         started = str(row["started_at"])
         ended = row.get("ended_at")
         if not ended:
             continue
-
         start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
         end_dt = datetime.fromisoformat(str(ended).replace("Z", "+00:00"))
         duration_min = round((end_dt - start_dt).total_seconds() / 60, 1)
+        night_key = (start_dt - timedelta(hours=6)).strftime("%Y-%m-%d")
 
-        # Group by the calendar date of sleep start (shifted: sleep before 6am = previous night)
-        night_start = start_dt - timedelta(hours=6)
-        night_key = night_start.strftime("%Y-%m-%d")
+        if _source_priority(device) != night_best_priority.get(night_key, 9):
+            continue
 
         if night_key not in nights:
-            nights[night_key] = {"date": night_key, "stages": {}, "total_minutes": 0, "segments": []}
+            nights[night_key] = {
+                "date": night_key,
+                "source": device,
+                "stages": {},
+                "total_minutes": 0,
+                "segments": [],
+            }
 
         stage = _STAGE_NAMES[val]
         nights[night_key]["stages"].setdefault(stage, 0)
@@ -512,7 +546,6 @@ def get_sleep(days: int = 7) -> dict:
 
     sorted_nights = sorted(nights.values(), key=lambda n: n["date"], reverse=True)
 
-    # Compute summary
     total_hours = [n["total_minutes"] / 60 for n in sorted_nights if n["total_minutes"] > 0]
     avg_hours = round(sum(total_hours) / len(total_hours), 1) if total_hours else None
 
