@@ -41,6 +41,15 @@ INSERT INTO health4ai_content_queue (slug, title, pub_date, status, batch) VALUE
 ('cursor-mcp-setup', 'Using health4ai with Cursor for Health Data Analysis', '2026-07-16', 'scheduled', 2),
 ('mcp-tools-reference', 'The health4ai MCP Tools Reference — All 9 Tools Explained', '2026-07-18', 'scheduled', 2);
 
+-- ⚠️ PROCESS-DRIFT WARNING (added 2026-07-15, audit finding: health4ai_config RLS disabled):
+-- Pasting this snippet directly into the Supabase SQL editor is the root cause of a LOW-severity
+-- audit finding — health4ai_config (+ health4ai_content_queue, health4ai_keyword_rankings) shipped
+-- with RLS disabled because they were created here, outside supabase/migrations/, where 001/002/006
+-- all explicitly ENABLE ROW LEVEL SECURITY at CREATE time. This violates the org policy in
+-- PATTERNS-supabase.md ('RLS-first: all new Supabase tables must have deny-all by default', 2026-05-12).
+-- RLS was retroactively enabled via ventures/health4ai/supabase/migrations/008_health4ai_config_rls.sql
+-- (2026-07-15). DO NOT copy/run this snippet again as-is — any new ad-hoc table must be created through
+-- supabase/migrations/ with RLS + policies in the SAME migration, not added later.
 -- Config table (if not already created)
 CREATE TABLE IF NOT EXISTS health4ai_config (
   key TEXT PRIMARY KEY,

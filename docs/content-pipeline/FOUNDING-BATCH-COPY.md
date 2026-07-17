@@ -104,6 +104,18 @@ App: https://health4.ai
 
 The founding batch end date is stored in Supabase:
 ```sql
+-- ⚠️ PROCESS-DRIFT WARNING (added 2026-07-15, audit finding: health4ai_config RLS disabled):
+-- Pasting this snippet directly into the Supabase SQL editor is the root cause of a LOW-severity
+-- audit finding — health4ai_config (+ health4ai_content_queue, health4ai_keyword_rankings) shipped
+-- with RLS disabled because they were created here, outside supabase/migrations/, where 001/002/006
+-- all explicitly ENABLE ROW LEVEL SECURITY at CREATE time. This violates the org policy in
+-- PATTERNS-supabase.md ('RLS-first: all new Supabase tables must have deny-all by default', 2026-05-12).
+-- RLS was retroactively enabled via ventures/health4ai/supabase/migrations/008_health4ai_config_rls.sql
+-- (2026-07-15). DO NOT copy/run this snippet again as-is — any new ad-hoc table must be created through
+-- supabase/migrations/ with RLS + policies in the SAME migration, not added later. NOTE: the anon-read
+-- landing-page fetch described below (line ~121, 'Fetch via Supabase anon key... public') was never
+-- implemented in web/src/ as of 2026-07-15 — do not assume an anon grant exists; verify live grants
+-- (information_schema.role_table_grants) before adding one.
 -- Run once
 CREATE TABLE IF NOT EXISTS health4ai_config (
   key TEXT PRIMARY KEY,
