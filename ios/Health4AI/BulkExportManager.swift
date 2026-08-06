@@ -113,17 +113,35 @@ final class BulkExportManager {
             } catch is CancellationError {
                 break
             } catch {
-                // Log per-type errors but continue with other types
+                // Log per-type errors and continue with other types, but do NOT mark this
+                // type's checkpoint/completion — leaving it out of `completedTypes` means
+                // the next startBackfill() call retries it from the same checkpoint instead
+                // of silently treating a real failure as "nothing more to sync."
                 print("[BulkExport] Error on \(sampleType.identifier): \(error)")
+                await MainActor.run {
+                    syncState.backfillError = "\(sampleType.identifier): \(error.localizedDescription)"
+                }
             }
         }
 
         if !Task.isCancelled {
-            // Mark global backfill complete
-            await MainActor.run {
-                syncState.recordBackfillComplete()
+            if typesCompleted == totalTypes {
+                // Every outstanding type actually succeeded this run — safe to latch
+                // the global "done" flag so future launches skip backfill entirely.
+                await MainActor.run {
+                    syncState.recordBackfillComplete()
+                }
+                print("[BulkExport] Backfill complete. Total records: \(totalSynced)")
+            } else {
+                // At least one type errored. Do NOT set the global backfillCompleted latch —
+                // that flag gates whether startBackfill() ever runs again (see backfillNeeded),
+                // so latching it here on a partial run would permanently strand the failed
+                // types with zero data and no future retry.
+                await MainActor.run {
+                    syncState.isBackfilling = false
+                }
+                print("[BulkExport] Backfill incomplete: \(typesCompleted)/\(totalTypes) types succeeded — will retry remaining types next launch.")
             }
-            print("[BulkExport] Backfill complete. Total records: \(totalSynced)")
         } else {
             await MainActor.run {
                 syncState.isBackfilling = false
@@ -173,10 +191,11 @@ final class BulkExportManager {
                     limit: HKObjectQueryNoLimit
                 )
             } catch {
-                // HKError code 5 = no data for this type/window — skip quietly
-                chunkStart = chunkEnd
-                UserDefaults.standard.set(chunkEnd.timeIntervalSince1970, forKey: checkpointKey)
-                continue
+                // HKSampleQuery returns an empty array (not a thrown error) when a window
+                // genuinely has no data. Any thrown error here is real — auth not determined,
+                // database inaccessible, invalid argument — and must propagate so the caller
+                // does NOT mark this type checkpointed/complete past an unprocessed window.
+                throw error
             }
 
             if !samples.isEmpty {
@@ -224,6 +243,49 @@ final class BulkExportManager {
         guard bgTaskID != .invalid else { return }
         UIApplication.shared.endBackgroundTask(bgTaskID)
         bgTaskID = .invalid
+    }
+
+    // MARK: - One-time repair for the pre-fix silent-skip bug
+
+    private static let stuckTypeMigrationKey = "hkb.migration.stuckHighVolumeTypesFix.v1"
+
+    /// Before this fix, `backfillType` treated ANY thrown error (not just genuine
+    /// no-data windows) as "nothing to sync," raced through all chunks back to 2013,
+    /// and let `runBackfill` mark the type `completedTypes` with zero rows synced —
+    /// permanently, since `backfillNeeded` never re-fires once the global latch is set.
+    /// StepCount, HeartRate, DistanceWalkingRunning, and ActiveEnergyBurned were
+    /// confirmed stuck this way (0 rows, all-time, in the Supabase healthkit_metrics
+    /// table) while every lower-volume type synced normally.
+    /// Runs once per install: clears their false "completed" state + checkpoints so
+    /// the next startBackfill() actually retries them, and un-latches the global
+    /// completed flag if it had been wrongly set true on their account.
+    func applyStuckTypeMigrationIfNeeded(syncState: SyncState) async {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.stuckTypeMigrationKey) else { return }
+        defaults.set(true, forKey: Self.stuckTypeMigrationKey)
+
+        let knownStuckIdentifiers: Set<String> = [
+            HKQuantityTypeIdentifier.stepCount.rawValue,
+            HKQuantityTypeIdentifier.heartRate.rawValue,
+            HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+            HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
+        ]
+
+        var completed = completedTypes
+        let hadStuckType = !completed.intersection(knownStuckIdentifiers).isEmpty
+        completed.subtract(knownStuckIdentifiers)
+        completedTypes = completed
+
+        for identifier in knownStuckIdentifiers {
+            defaults.removeObject(forKey: Self.chunkCheckpointPrefix + identifier)
+        }
+
+        if hadStuckType {
+            // These types never actually synced, so the prior "all done" latch was
+            // wrong — clear it so startBackfill() runs again for the reset types.
+            await MainActor.run { syncState.backfillCompleted = false }
+            print("[BulkExport] Migration: reset stuck high-volume types for retry.")
+        }
     }
 
     // MARK: - Reset backfill state (for re-running)

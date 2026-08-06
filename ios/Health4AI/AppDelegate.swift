@@ -53,6 +53,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         Task { @MainActor in
             SyncEngine.shared.startObserving()
             SyncEngine.shared.performForegroundSync()
+            await BulkExportManager.shared.applyStuckTypeMigrationIfNeeded(syncState: syncState)
             if BulkExportManager.shared.backfillNeeded {
                 BulkExportManager.shared.startBackfill(syncState: syncState)
             }
