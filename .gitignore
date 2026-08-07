@@ -12,6 +12,15 @@ venv/
 # iOS / Xcode
 ios/build/
 ios/DerivedData/
+# Loose screenshots dropped at ios/ root. THIS REPO IS PUBLIC. A 1.3 MB
+# full-desktop capture (Gmail inbox, sender names, subject lines, an invoice ID, a
+# licence application number) sat here untracked from 2026-06-25 to 2026-08-07 —
+# one `git add .` from being published irreversibly. Real app assets live under
+# ios/Health4AI/Assets.xcassets/, which this pattern does not reach (gitignore
+# globs do not cross `/`).
+ios/*.png
+ios/*.jpg
+ios/*.jpeg
 *.xcuserstate
 xcuserdata/
 *.mobileprovision
