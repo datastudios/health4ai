@@ -44,7 +44,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>15</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 
 	<!-- Require iOS 17 -->
 	<key>MinimumOSVersion</key>

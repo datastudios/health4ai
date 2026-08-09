@@ -14,11 +14,19 @@ Updated: 2026-08-09. The app is ready for a privacy-preserving private beta.
 - [x] Hosted-tier DB tables dropped from Supabase (healthkit_api_keys, healthkit_setup_codes)
 - [x] Tenant-isolation migration and authenticated ingest safeguards added
 - [x] New installs default to a minimal Health data scope; existing completed installs retain their current scope
-- [x] Build number bumped to **1.0 (15)** for this upload
+- [x] Initial controlled upload completed through Xcode (App Store Connect build 17)
+- [x] GitHub-gated TestFlight release workflow added; see [`docs/GITHUB-TESTFLIGHT.md`](docs/GITHUB-TESTFLIGHT.md)
 
 ---
 
-## STEP 1 — Archive and Upload (Xcode, ~15 min)
+## STEP 1 — Release through GitHub (recommended)
+
+Use the protected, manual/tagged GitHub Action described in
+[`docs/GITHUB-TESTFLIGHT.md`](docs/GITHUB-TESTFLIGHT.md). It creates a unique
+UTC build number, records the commit that shipped, and uploads a build eligible
+for both internal and external TestFlight groups.
+
+## Manual fallback — Archive and Upload (Xcode, ~15 min)
 
 1. Open the `Health4AI.xcodeproj` in the release worktree
 2. Top bar: scheme **Health4AI**, destination **Any iOS Device (arm64)**
@@ -32,7 +40,7 @@ Updated: 2026-08-09. The app is ready for a privacy-preserving private beta.
 ## STEP 2 — Add the Tester (App Store Connect, ~5 min)
 
 1. https://appstoreconnect.apple.com → your app → **TestFlight**
-2. **Internal Testing** → select the new build (1.0 build 15)
+2. **Internal Testing** → select the processed build you intend to test
 3. **Add Testers** → enter their Apple ID email
 4. They get a TestFlight invite email; they install the TestFlight app and accept
 

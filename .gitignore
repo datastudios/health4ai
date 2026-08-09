@@ -25,6 +25,7 @@ ios/*.jpeg
 xcuserdata/
 *.mobileprovision
 *.p12
+AuthKey_*.p8
 
 # macOS
 .DS_Store
