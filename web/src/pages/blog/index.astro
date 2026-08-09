@@ -48,7 +48,7 @@ function formatDate(d: Date) {
   <div class="flex flex-col gap-6">
     {posts.map(post => (
       <a
-        href={`/blog/${post.slug}`}
+        href={`/blog/${post.data.slug}`}
         class="group block p-5 rounded-xl border transition-colors"
         style="border-color:var(--border);background:rgba(255,255,255,0.02)"
       >

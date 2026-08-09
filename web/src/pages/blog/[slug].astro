@@ -1,20 +1,20 @@
 ---
 import Layout from '../../layouts/Layout.astro';
-import { getCollection, getEntry } from 'astro:content';
+import { getCollection, render } from 'astro:content';
 
 export async function getStaticPaths() {
   const posts = await getCollection('blog', ({ data }) => !data.draft);
-  return posts.map(post => ({ params: { slug: post.slug } }));
+  return posts.map(post => ({ params: { slug: post.data.slug } }));
 }
 
 const { slug } = Astro.params;
-const post = await getEntry('blog', slug as string);
+const post = (await getCollection('blog')).find(entry => entry.data.slug === slug);
 
 if (!post) {
   return Astro.redirect('/blog');
 }
 
-const { Content } = await post.render();
+const { Content } = await render(post);
 
 function formatDate(d: Date) {
   return new Date(d).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -23,6 +23,8 @@ function formatDate(d: Date) {
 <Layout
   title={`${post.data.title} — health4.ai`}
   description={post.data.description}
+  ogType="article"
+  ogUrl={`https://health4.ai/blog/${post.data.slug}`}
 >
 <style>
   .prose { color: #a0aec0; line-height: 1.8; font-size: 0.95rem; }
@@ -59,8 +61,7 @@ function formatDate(d: Date) {
 </nav>
 
 <!-- Canonical + OG for article -->
-<link rel="canonical" href={`https://health4.ai/blog/${post.slug}`} slot="head" />
-<meta property="og:type" content="article" slot="head" />
+<link rel="canonical" href={`https://health4.ai/blog/${post.data.slug}`} slot="head" />
 <meta property="article:published_time" content={new Date(post.data.pubDate).toISOString()} slot="head" />
 
 <main class="px-6 py-10 max-w-[680px] mx-auto">

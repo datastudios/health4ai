@@ -3,10 +3,14 @@ import PostHog from '../components/posthog.astro';
 interface Props {
   title?: string;
   description?: string;
+  ogType?: 'website' | 'article';
+  ogUrl?: string;
 }
 const {
   title = 'health4.ai — Apple Health data for AI',
   description = 'Free iOS app that connects Apple Health to Claude, ChatGPT, Cursor, and any AI. Ask about your sleep, recovery, and fitness in plain language.',
+  ogType = 'website',
+  ogUrl = 'https://health4.ai',
 } = Astro.props;
 
 const clarityId   = import.meta.env.PUBLIC_CLARITY_PROJECT_ID as string | undefined;
@@ -23,9 +27,10 @@ const metaPixelId = import.meta.env.PUBLIC_META_PIXEL_ID as string | undefined;
     <!-- OG -->
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
-    <meta property="og:url" content="https://health4.ai" />
-    <meta property="og:type" content="website" />
+    <meta property="og:url" content={ogUrl} />
+    <meta property="og:type" content={ogType} />
     <meta property="og:image" content="https://health4.ai/logo.png" />
+    <slot name="head" />
 
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
