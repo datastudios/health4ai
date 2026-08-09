@@ -170,6 +170,31 @@ final class SyncState: ObservableObject {
         backfillError = message
     }
 
+    /// Removes all locally retained account, endpoint, progress, and credential state.
+    /// Use this before handing a device to another person or switching backends.
+    func eraseLocalDataAndConfiguration() {
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("hkb.") {
+            defaults.removeObject(forKey: key)
+        }
+        CredentialKeychain.deleteAll()
+        connectionType = .supabase
+        supabaseProjectURL = ""
+        serverURL = ""
+        restAuthType = .bearer
+        restApiKeyHeader = "X-API-Key"
+        lastSyncDate = nil
+        lastSyncRecordCount = 0
+        backfillCompleted = false
+        backfillSyncedRecords = 0
+        backfillTotalRecords = 0
+        backfillEarliestDate = nil
+        backfillLatestDate = nil
+        lifetimeSyncedRecords = 0
+        isAuthenticated = false
+        userEmail = nil
+    }
+
     // MARK: - Computed helpers
 
     var backfillProgressFraction: Double {

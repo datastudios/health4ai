@@ -4,7 +4,7 @@
 <dict>
 	<!-- HealthKit usage descriptions (required for App Store and Health access) -->
 	<key>NSHealthShareUsageDescription</key>
-	<string>health4ai reads all your health and fitness data to sync it to your personal Supabase database for analysis and archival.</string>
+	<string>health4ai reads only the Health data types you select to sync them to the backend you configure for analysis and archival.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>health4ai does not write health data.</string>
 
@@ -44,7 +44,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
-	<string>2</string>
+	<string>15</string>
 
 	<!-- Require iOS 17 -->
 	<key>MinimumOSVersion</key>

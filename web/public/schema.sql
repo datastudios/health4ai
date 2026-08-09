@@ -67,8 +67,10 @@ CREATE OR REPLACE VIEW v_healthkit_daily_quantity AS
     AND metric_type NOT LIKE 'HKWorkoutType%'
   GROUP BY user_id, metric_type, started_at::date;
 
--- Supabase only: optional Row-Level Security
--- Skip if using a private database with a single user
+-- Supabase only: do not use this portable schema as a shared multi-user API.
+-- The app's hosted ingestion flow uses supabase/migrations/009_healthkit_metrics_tenant_isolation.sql,
+-- which creates the canonical table with auth.users ownership and deny-by-default RLS.
+-- This portable schema remains suitable for a private database owned by one person.
 -- ALTER TABLE healthkit_metrics ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE healthkit_daily_summaries ENABLE ROW LEVEL SECURITY;
 -- CREATE POLICY "own_data" ON healthkit_metrics FOR ALL USING (auth.uid()::text = user_id);

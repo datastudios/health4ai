@@ -35,7 +35,7 @@ struct PrivacyView: View {
                 FlowNode(icon: "brain", label: "Your AI agent (Claude, etc.)", color: .blue)
             }
 
-            Text("health4ai is not in this chain. It is the transport layer — nothing more.")
+            Text("health4ai is not a shared health-data backend. Your chosen database and AI provider remain separate privacy decisions.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -57,13 +57,13 @@ struct PrivacyView: View {
                 icon: "xmark.shield.fill",
                 color: .red,
                 title: "No data collection",
-                detail: "health4ai has no backend servers. Your health data is never transmitted to us — it only goes where you direct it."
+                detail: "health4ai does not operate a shared health-data backend. Your health data goes only to the database endpoint you configure."
             )
             GuaranteeRow(
                 icon: "eye.slash.fill",
                 color: .orange,
                 title: "No analytics",
-                detail: "Zero third-party SDKs. No Amplitude, Firebase, Crashlytics, or any service that phones home. The PrivacyInfo.xcprivacy manifest in the app bundle verifies this."
+                detail: "The app contains no analytics or crash-reporting SDKs. Your chosen database and any cloud AI provider have their own privacy practices."
             )
             GuaranteeRow(
                 icon: "lock.open.fill",
@@ -72,10 +72,10 @@ struct PrivacyView: View {
                 detail: "Every line of code is publicly auditable on GitHub. What you see is what runs."
             )
             GuaranteeRow(
-                icon: "moon.fill",
+                icon: "arrow.triangle.2.circlepath",
                 color: .indigo,
-                title: "Background sync even when locked",
-                detail: "Uses HKObserverQuery background delivery — the correct iOS API. Unlike apps that require your phone to be unlocked, health4ai syncs while your phone sleeps."
+                title: "Sync status is visible",
+                detail: "health4ai syncs when it can. Background delivery depends on iOS permissions and system scheduling, so check the Home screen for the latest completed sync."
             )
         }
         .padding()

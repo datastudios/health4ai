@@ -6,6 +6,7 @@ struct HomeView: View {
     @State private var showMCPSetup = false
     @State private var isRequestingHealth = false
     @State private var healthAccessError: String?
+    @State private var healthScope = HealthKitManager.selectedScope
 
     var body: some View {
         NavigationStack {
@@ -114,7 +115,7 @@ struct HomeView: View {
                 icon: "chart.bar.fill",
                 color: .purple,
                 label: "Metric types",
-                value: "150+"
+                value: HealthKitManager.selectedScope == .essentials ? "Core set" : "All supported"
             )
         }
     }
@@ -160,6 +161,18 @@ struct HomeView: View {
             Text("If health data isn't syncing, grant access here or enable it in Settings. Already connected? This is a safe no-op.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            LabeledContent("Data scope") {
+                Picker("Data scope", selection: $healthScope) {
+                    ForEach(HealthKitManager.DataScope.allCases) { scope in
+                        Text(scope.title).tag(scope)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+            Text(healthScope.detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             if let healthAccessError {
                 Label(healthAccessError, systemImage: "exclamationmark.triangle")
                     .font(.caption)
@@ -167,11 +180,11 @@ struct HomeView: View {
             }
             HStack(spacing: 12) {
                 Button {
-                    requestHealthAccess()
+                    requestHealthAccess(scope: healthScope)
                 } label: {
                     HStack(spacing: 6) {
                         if isRequestingHealth { ProgressView().scaleEffect(0.7) }
-                        Text(isRequestingHealth ? "Requesting…" : "Grant / Re-check Access")
+                        Text(isRequestingHealth ? "Requesting…" : "Request \(healthScope == .essentials ? "Core" : "All") Access")
                     }
                     .frame(maxWidth: .infinity, minHeight: 36)
                 }
@@ -194,12 +207,12 @@ struct HomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    private func requestHealthAccess() {
+    private func requestHealthAccess(scope: HealthKitManager.DataScope) {
         isRequestingHealth = true
         healthAccessError = nil
         Task {
             do {
-                try await HealthKitManager.shared.requestAuthorization()
+                try await HealthKitManager.shared.requestAuthorization(scope: scope)
                 await MainActor.run { isRequestingHealth = false }
             } catch {
                 await MainActor.run {

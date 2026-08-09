@@ -8,6 +8,7 @@ struct ConnectionView: View {
 
     @State private var showSignIn = false
     @State private var showSignOut = false
+    @State private var showErase = false
     @State private var testResult: TestResult? = nil
     @State private var isTesting = false
     var body: some View {
@@ -16,6 +17,7 @@ struct ConnectionView: View {
                 backendTypeSection
                 configSection
                 authSection
+                privacySection
                 testSection
             }
             .navigationTitle("Connection")
@@ -38,6 +40,18 @@ struct ConnectionView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You will need to sign in again to resume syncing.")
+        }
+        .alert("Erase Local Data and Configuration?", isPresented: $showErase) {
+            Button("Erase", role: .destructive) {
+                authManager.signOut()
+                SyncEngine.shared.stopObserving()
+                SyncEngine.shared.resetAnchors()
+                BulkExportManager.shared.resetBackfill()
+                syncState.eraseLocalDataAndConfiguration()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes this device's saved backend address, credentials, sync history, and Health4AI setup. It does not delete backend or Apple Health data, and it does not revoke HealthKit permission in iOS Settings.")
         }
     }
 
@@ -177,6 +191,20 @@ struct ConnectionView: View {
         }
     }
 
+    private var privacySection: some View {
+        Section {
+            Button(role: .destructive) {
+                showErase = true
+            } label: {
+                Label("Erase Local Data & Configuration", systemImage: "trash")
+            }
+        } header: {
+            Text("Device Privacy")
+        } footer: {
+            Text("Use before giving this device to someone else. Your database is never shared automatically.")
+        }
+    }
+
     // MARK: - Test connection
 
     private var testSection: some View {
@@ -226,9 +254,18 @@ struct ConnectionView: View {
             do {
                 let (_, response) = try await URLSession.shared.data(for: req)
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let ok = (200...299).contains(code) || code == 401 || code == 403
+                let ok = (200...299).contains(code)
+                let message: String
+                switch code {
+                case 200...299:
+                    message = "Endpoint reachable"
+                case 401, 403:
+                    message = "Endpoint reached, but authentication is required"
+                default:
+                    message = "HTTP \(code) — check your config"
+                }
                 await MainActor.run {
-                    testResult = TestResult(success: ok, message: ok ? "Endpoint reachable (HTTP \(code))" : "HTTP \(code) — check your config")
+                    testResult = TestResult(success: ok, message: message)
                     isTesting = false
                 }
             } catch {

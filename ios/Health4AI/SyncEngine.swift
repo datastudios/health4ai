@@ -59,7 +59,7 @@ final class SyncEngine {
     /// Registers background delivery and observer queries for all HealthKit types.
     /// Call after authorization is granted.
     func startObserving() {
-        let types = HealthKitManager.allSampleTypes()
+        let types = HealthKitManager.sampleTypes()
 
         for sampleType in types {
             // Enable background delivery (fires our app when new data is written)
@@ -157,7 +157,7 @@ final class SyncEngine {
 
     @discardableResult
     func performFullSync() async throws -> Int {
-        let types = HealthKitManager.allSampleTypes()
+        let types = HealthKitManager.sampleTypes()
         var totalCount = 0
 
         // Sync each type sequentially to keep memory usage bounded
@@ -275,7 +275,7 @@ final class SyncEngine {
             request.timeoutInterval = 60
 
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (_, response) = try await URLSession.shared.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw SyncError.invalidResponse
                 }
@@ -290,8 +290,7 @@ final class SyncEngine {
                     lastError = SyncError.serverError(httpResponse.statusCode)
                     continue
                 default:
-                    let body = String(data: data, encoding: .utf8) ?? "(no body)"
-                    lastError = SyncError.httpError(httpResponse.statusCode, body)
+                    lastError = SyncError.httpError(httpResponse.statusCode)
                     if httpResponse.statusCode >= 500 {
                         continue // retry on 5xx
                     } else {
@@ -343,7 +342,7 @@ enum SyncError: LocalizedError {
     case invalidResponse
     case unauthorized
     case serverError(Int)
-    case httpError(Int, String)
+    case httpError(Int)
     case unknownPostFailure
 
     var errorDescription: String? {
@@ -353,7 +352,7 @@ enum SyncError: LocalizedError {
         case .invalidResponse:          return "Invalid HTTP response"
         case .unauthorized:             return "Unauthorized — please sign in again"
         case .serverError(let code):    return "Server error \(code)"
-        case .httpError(let code, let body): return "HTTP \(code): \(body)"
+        case .httpError(let code): return "HTTP \(code)"
         case .unknownPostFailure:       return "Unknown POST failure"
         }
     }

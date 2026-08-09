@@ -22,9 +22,18 @@ interface IngestPayload {
   samples: HealthSample[]
 }
 
+const MAX_BODY_BYTES = 5 * 1024 * 1024
+const MAX_METADATA_BYTES = 4 * 1024
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 })
+  }
+
+  const contentLengthHeader = req.headers.get('content-length')
+  const contentLength = Number(contentLengthHeader)
+  if (!contentLengthHeader || !Number.isFinite(contentLength) || contentLength > MAX_BODY_BYTES) {
+    return json({ error: 'Request body exceeds maximum size' }, 413)
   }
 
   // Validate Supabase JWT
@@ -69,6 +78,12 @@ Deno.serve(async (req: Request) => {
     ) {
       return json({ error: 'String field exceeds maximum length of 256' }, 400)
     }
+    if (s.metadata !== null && (typeof s.metadata !== 'object' || Array.isArray(s.metadata))) {
+      return json({ error: 'Metadata must be an object or null' }, 400)
+    }
+    if (s.metadata && new TextEncoder().encode(JSON.stringify(s.metadata)).length > MAX_METADATA_BYTES) {
+      return json({ error: 'Metadata exceeds maximum size of 4096 bytes' }, 400)
+    }
   }
 
   // Attach user_id to all rows
@@ -111,8 +126,8 @@ Deno.serve(async (req: Request) => {
     })
 
   if (error) {
-    console.error('Upsert error:', error)
-    return json({ error: error.message }, 500)
+    console.error('Upsert failed', { code: error.code })
+    return json({ error: 'Unable to store samples' }, 500)
   }
 
   return json({ inserted: count ?? dedupedRows.length })

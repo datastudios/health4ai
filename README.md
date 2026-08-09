@@ -154,7 +154,7 @@ mcphost --model ollama/llama3.2 \
 Your health data and the model both stay on your hardware — nothing leaves your machine.
 </details>
 
-**Install the iOS app:** TestFlight link coming at App Store launch. Sign in with your database credentials and tap **Start Sync**.
+**Install the iOS app:** Configure a database and Supabase account that you control, then sign in and tap **Start Sync**. For a private TestFlight beta, follow [the tester-isolation guide](docs/TESTFLIGHT-BETA.md); never use another person's backend or credentials.
 
 ---
 

@@ -72,7 +72,7 @@ final class BulkExportManager {
     // MARK: - Backfill execution
 
     private func runBackfill(syncState: SyncState) async {
-        let allTypes = HealthKitManager.allSampleTypes()
+        let allTypes = HealthKitManager.sampleTypes()
         let remainingTypes = allTypes.filter { !completedTypes.contains($0.identifier) }
 
         // Estimate total by querying counts (fast path: just run the sync and count)

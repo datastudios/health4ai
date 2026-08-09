@@ -1,6 +1,28 @@
 # health4ai — Setup Guide
 
-## Step 1: Set up your Postgres database
+## Step 1: Set up a backend you control
+
+### Supabase (recommended for the iOS app)
+
+Use a Supabase project you own. Do not use another person's project URL,
+credentials, or database account.
+
+```bash
+supabase db push
+supabase functions deploy healthkit-ingest
+```
+
+The migrations include `009_healthkit_metrics_tenant_isolation.sql`, which makes
+the hosted ingestion table deny direct anon/authenticated access. The Edge
+Function validates the signed-in user's JWT and writes only under that user's ID.
+Create your own Supabase user in your project dashboard, then enter your project
+URL and anon key in the app and sign in with that user.
+
+### Private Postgres / Neon / local Docker
+
+The portable schema below is for a database owned by one person. It is not a
+shared multi-user Supabase configuration; use the Supabase path above for the
+iOS app's built-in authentication and hosted ingestion flow.
 
 Run the schema against your chosen backend:
 
@@ -72,6 +94,8 @@ mcphost --model ollama/llama3.2 \
 4. Enter your database credentials and tap **Start Sync**
 
 The first launch runs a full backfill of your HealthKit history — this can take a few minutes depending on data volume.
+
+For TestFlight cohorts, also follow [Private TestFlight beta](TESTFLIGHT-BETA.md).
 
 ## Step 5: Verify
 

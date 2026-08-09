@@ -1,4 +1,4 @@
 [functions.healthkit-ingest]
 verify_jwt = false
-# Auth is handled inside the function: h4_sk_* tokens → healthkit_api_keys lookup,
-# Supabase JWTs → auth.getUser(). Gateway JWT check disabled so custom tokens pass through.
+# Auth is handled inside the function with Supabase auth.getUser(). Gateway JWT
+# verification is disabled only so the function can return its own clear 401 error.

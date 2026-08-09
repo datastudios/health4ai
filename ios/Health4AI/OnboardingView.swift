@@ -37,7 +37,7 @@ private struct WelcomeStep: View {
                 Text("Your health data.\nAny AI. Your rules.")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
-                Text("No export files. No middleman. health4ai syncs live from HealthKit — ready for any AI you trust, local or cloud.")
+                Text("Sync HealthKit to a database you control, then use it with an AI you choose. Start with a backend that belongs to you — never someone else’s account.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -73,7 +73,7 @@ private struct PrivacyStep: View {
             VStack(spacing: 12) {
                 Text("Privacy by design")
                     .font(.largeTitle.bold())
-                Text("Your health data travels in one direction: from your device to your backend. No export files. No cloud intermediaries.")
+                Text("Your health data goes from your device to the backend you configure. health4ai does not operate a shared health-data backend.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -95,10 +95,10 @@ private struct PrivacyStep: View {
             .padding(.horizontal, 48)
             VStack(alignment: .leading, spacing: 10) {
                 PrivacyBullet(text: "No export files — ever")
-                PrivacyBullet(text: "No third-party servers")
+                PrivacyBullet(text: "Your own database and account")
                 PrivacyBullet(text: "No analytics or crash reporting")
                 PrivacyBullet(text: "Open source — audit every line")
-                PrivacyBullet(text: "App Store privacy label: Data Not Collected")
+                PrivacyBullet(text: "You choose whether an AI runs locally or in the cloud")
             }
             .padding(.horizontal, 32)
             Spacer()
@@ -160,6 +160,7 @@ private struct HealthKitStep: View {
     @State private var isRequesting = false
     @State private var granted = false
     @State private var error: String? = nil
+    @State private var scope: HealthKitManager.DataScope = .essentials
 
     var body: some View {
         VStack(spacing: 32) {
@@ -170,7 +171,7 @@ private struct HealthKitStep: View {
             VStack(spacing: 12) {
                 Text("Grant Health access")
                     .font(.largeTitle.bold())
-                Text("health4ai needs read access to sync your data. You control which types are shared.")
+                Text("Start with the minimum data needed for useful activity, sleep, and recovery insights. You can choose a broader scope explicitly.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -187,6 +188,18 @@ private struct HealthKitStep: View {
                     .font(.caption)
                     .padding(.horizontal, 24)
             }
+            Picker("Health data", selection: $scope) {
+                ForEach(HealthKitManager.DataScope.allCases) { scope in
+                    Text(scope.title).tag(scope)
+                }
+            }
+            .pickerStyle(.menu)
+            .padding(.horizontal, 24)
+            Text(scope.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
             Spacer()
             VStack(spacing: 12) {
                 if !granted {
@@ -205,7 +218,7 @@ private struct HealthKitStep: View {
                     .disabled(isRequesting)
                     .padding(.horizontal, 32)
                 }
-                Button(action: onDone) {
+                Button(action: completeOnboarding) {
                     Text(granted ? "Start Syncing" : "Skip for now")
                         .font(.subheadline)
                         .foregroundStyle(granted ? .pink : .secondary)
@@ -219,7 +232,7 @@ private struct HealthKitStep: View {
         isRequesting = true
         Task {
             do {
-                try await HealthKitManager.shared.requestAuthorization()
+                try await HealthKitManager.shared.requestAuthorization(scope: scope)
                 await MainActor.run {
                     isRequesting = false
                     granted = true
@@ -232,6 +245,11 @@ private struct HealthKitStep: View {
             }
         }
     }
+
+    private func completeOnboarding() {
+        // Persist the default even when HealthKit access is skipped so a later
+        // sign-in cannot silently expand the requested data scope.
+        UserDefaults.standard.set(scope.rawValue, forKey: HealthKitManager.DataScope.storageKey)
+        onDone()
+    }
 }
-
-

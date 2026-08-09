@@ -1,6 +1,6 @@
 # health4ai — TestFlight Tester Checklist
 
-Updated: 2026-06-23. All infrastructure work is done. Three manual steps remain.
+Updated: 2026-08-09. The app is ready for a privacy-preserving private beta.
 
 ---
 
@@ -12,13 +12,15 @@ Updated: 2026-06-23. All infrastructure work is done. Three manual steps remain.
 - [x] App created in App Store Connect (com.jglittell.health4ai)
 - [x] health4.ai cloud backend removed — app is self-hosted only (Supabase / REST)
 - [x] Hosted-tier DB tables dropped from Supabase (healthkit_api_keys, healthkit_setup_codes)
-- [x] Build number bumped to **1.0 (2)** for this upload
+- [x] Tenant-isolation migration and authenticated ingest safeguards added
+- [x] New installs default to a minimal Health data scope; existing completed installs retain their current scope
+- [x] Build number bumped to **1.0 (15)** for this upload
 
 ---
 
 ## STEP 1 — Archive and Upload (Xcode, ~15 min)
 
-1. Open `~/ventures/health4ai/ios/Health4AI.xcodeproj`
+1. Open the `Health4AI.xcodeproj` in the release worktree
 2. Top bar: scheme **Health4AI**, destination **Any iOS Device (arm64)**
 3. **Product → Archive** — wait ~2–3 min
 4. Organizer opens → select the new archive → **Distribute App**
@@ -30,7 +32,7 @@ Updated: 2026-06-23. All infrastructure work is done. Three manual steps remain.
 ## STEP 2 — Add the Tester (App Store Connect, ~5 min)
 
 1. https://appstoreconnect.apple.com → your app → **TestFlight**
-2. **Internal Testing** → select the new build (1.0 build 2)
+2. **Internal Testing** → select the new build (1.0 build 15)
 3. **Add Testers** → enter their Apple ID email
 4. They get a TestFlight invite email; they install the TestFlight app and accept
 
@@ -43,18 +45,20 @@ Updated: 2026-06-23. All infrastructure work is done. Three manual steps remain.
 **Onboarding flow (3 steps):**
 1. Welcome screen
 2. Privacy explanation
-3. HealthKit permission grant
+3. HealthKit permission grant, with a choice of Essentials (default) or every supported type
 
 **Connection screen:**
 - Two backend options: **Supabase** (recommended) or **REST / Webhook**
-- For Supabase: paste their project URL + anon key → Test Connection → done
+- For Supabase: paste the URL + anon key for a project they control → Test Connection → done
 - No health4.ai account, no setup code, no cloud option
 
 **What they need before testing:**
-- A free Supabase project (supabase.com) with the health4ai schema applied, OR
+- A fresh free Supabase project (supabase.com) with the health4ai migrations and Edge Function deployed, OR
 - Any HTTPS endpoint that accepts JSON POST
 
-> You can send testers the setup SQL from `supabase/migrations/001_healthkit_schema.sql` — it's the only migration they need to run on their own Supabase project.
+> Send testers to [`docs/TESTFLIGHT-BETA.md`](docs/TESTFLIGHT-BETA.md). They must use a separate Supabase project/account from Jeff's production setup, then run `supabase db push` and `supabase functions deploy healthkit-ingest`. Do not use the legacy `web/functions/ingest.js` endpoint.
+
+For a small, known group, use an App Store Connect internal or external TestFlight group with email invites. A public link is only appropriate with a tester cap and acceptance criteria, because it can be forwarded. External testers require Beta App Review.
 
 ---
 
@@ -73,12 +77,12 @@ When stable iOS 26 ships:
 **Subtitle:** Your health data, your database
 
 **Description:**
-health4ai syncs your Apple Health data directly to a Postgres database you own and control — no middleman, no subscription, no lock-in.
+health4ai syncs your Apple Health data directly to a Postgres database you control — no middleman, no subscription, no lock-in.
 
-Connect your Supabase project (or any compatible Postgres endpoint), grant HealthKit read access, and health4ai syncs every data type in your Apple Health library — heart rate, HRV, sleep, workouts, steps, glucose, and more — into your own database.
+Connect a Supabase project (or compatible HTTPS endpoint) you control, grant the HealthKit access you choose, and health4ai syncs those health samples to your own database.
 
 **Your data stays yours**
-- health4ai never sees or stores your health data
+- health4ai does not provide a shared health-data backend
 - All sync is device-to-your-database
 - Revoke access anytime in iPhone Settings → Privacy & Security → Health
 

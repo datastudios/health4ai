@@ -12,6 +12,31 @@ final class HealthKitManager {
 
     private init() {}
 
+    enum DataScope: String, CaseIterable, Identifiable {
+        case essentials
+        case complete
+
+        static let storageKey = "hkb.healthDataScope"
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .essentials: return "Core activity, sleep & recovery"
+            case .complete: return "All supported Health data"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .essentials:
+                return "Steps, activity, workouts, sleep, heart rate, resting heart rate, and HRV."
+            case .complete:
+                return "Also includes sensitive categories such as reproductive health, symptoms, nutrition, and clinical-style measurements."
+            }
+        }
+    }
+
     // MARK: - Type enumeration
 
     /// Builds the complete set of all readable HKSampleTypes at runtime.
@@ -152,15 +177,50 @@ final class HealthKitManager {
         return types
     }
 
+    /// The least-privilege set offered to new users. Existing installs retain their
+    /// previous full-data behavior until the user changes it deliberately.
+    static func essentialSampleTypes() -> Set<HKSampleType> {
+        let identifiers: [HKQuantityTypeIdentifier] = [
+            .stepCount, .distanceWalkingRunning, .activeEnergyBurned,
+            .heartRate, .restingHeartRate, .heartRateVariabilitySDNN, .vo2Max
+        ]
+        var types = Set<HKSampleType>()
+        for identifier in identifiers {
+            if let type = HKQuantityType.quantityType(forIdentifier: identifier) {
+                types.insert(type)
+            }
+        }
+        if let sleep = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+            types.insert(sleep)
+        }
+        types.insert(HKWorkoutType.workoutType())
+        return types
+    }
+
+    static var selectedScope: DataScope {
+        // Existing installs completed onboarding before scoped consent existed;
+        // preserve their full-data behavior. A new user who skipped authorization
+        // still defaults to essentials when they grant access later.
+        guard let raw = UserDefaults.standard.string(forKey: DataScope.storageKey) else {
+            return UserDefaults.standard.bool(forKey: "hkb.onboardingComplete") ? .complete : .essentials
+        }
+        return DataScope(rawValue: raw) ?? .essentials
+    }
+
+    static func sampleTypes(for scope: DataScope = selectedScope) -> Set<HKSampleType> {
+        scope == .essentials ? essentialSampleTypes() : allSampleTypes()
+    }
+
     // MARK: - Authorization
 
-    /// Requests read authorization for all supported HealthKit types.
+    /// Requests read authorization only for the scope the user explicitly chose.
     /// Must be called from the main thread (presents HK auth sheet).
-    func requestAuthorization() async throws {
+    func requestAuthorization(scope: DataScope = HealthKitManager.selectedScope) async throws {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw HKError(.errorHealthDataUnavailable)
         }
-        let readTypes = Self.allSampleTypes()
+        UserDefaults.standard.set(scope.rawValue, forKey: DataScope.storageKey)
+        let readTypes = Self.sampleTypes(for: scope)
         try await store.requestAuthorization(toShare: [], read: readTypes)
     }
 

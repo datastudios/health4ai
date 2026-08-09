@@ -97,6 +97,17 @@ enum CredentialKeychain {
               let data = result as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    static func deleteAll() {
+        for key in sensitiveKeys {
+            let query: [CFString: Any] = [
+                kSecClass: kSecClassGenericPassword,
+                kSecAttrService: service as CFString,
+                kSecAttrAccount: key as CFString,
+            ]
+            SecItemDelete(query as CFDictionary)
+        }
+    }
 }
 
 // MARK: - SecureFieldToggle (shared across views)
@@ -166,6 +177,9 @@ struct SignInView: View {
         NavigationStack {
             Form {
                 Section("Supabase Account") {
+                    Text("Sign in with an account in your own Supabase project. health4ai does not create or operate this account.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     TextField("Email", text: $email)
                         .autocapitalization(.none)
                         .autocorrectionDisabled()
