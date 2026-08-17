@@ -118,6 +118,26 @@ if __name__ == "__main__":
                     return JSONResponse({"error": "Authorization required"}, status_code=401)
 
         app = mcp.http_app(middleware=[Middleware(AuthMiddleware)])
-        uvicorn.run(app, host="0.0.0.0", port=args.port)
+        # Bind LOOPBACK by default, not 0.0.0.0.
+        #
+        # This host sits on a PUBLIC IP with no NAT (en0 == egress ==
+        # 32.218.210.216, verified 2026-08-17), so `0.0.0.0` here did not mean
+        # "the LAN" — it meant the open internet. Proven, not theorised: an
+        # unauthenticated MCP `initialize` sent to http://32.218.210.216:8091/mcp
+        # from outside completed with HTTP 200 and returned this server's full
+        # tool capabilities, advertising "Query your Apple Health data — sleep,
+        # HRV, workouts, steps."
+        #
+        # It got through because MCP_AUTH_ENABLED=true is set in
+        # com.health4ai.mcp-server.plist, which activates the DEV BYPASS at the
+        # `elif` above — the flag reads like it turns auth ON and in fact turns it
+        # OFF. The bypass is survivable behind loopback; it was not survivable
+        # bound to a public interface.
+        #
+        # The intended public path is the Cloudflare tunnel, whose ingress is
+        # `mcp.health4.ai -> http://localhost:8091` — loopback satisfies it, so
+        # this change costs nothing and Access policies are no longer bypassable
+        # by dialling the IP directly. Override only with a deliberate reason.
+        uvicorn.run(app, host=os.environ.get("MCP_BIND_HOST", "127.0.0.1"), port=args.port)
     else:
         mcp.run()
