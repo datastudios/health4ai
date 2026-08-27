@@ -32,35 +32,6 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
   input:focus-visible { box-shadow: 0 0 0 2px var(--accent) !important; border-color: var(--accent) !important; }
 </style>
 
-<!-- ── FOUNDING BATCH BANNER ──────────────────────────────── -->
-<div id="founding-banner" style="display:none;background:rgba(255,45,120,0.07);border-bottom:1px solid rgba(255,45,120,0.15)">
-  <div class="flex items-center justify-between px-6 py-2.5 max-w-6xl mx-auto">
-    <p class="text-xs" style="color:var(--muted)">
-      health4ai is free through July.
-      <a href="#founding-batch" class="font-semibold transition-colors hover:opacity-80" style="color:var(--accent)">Founding batch gets lifetime access →</a>
-    </p>
-    <button id="dismiss-banner" aria-label="Dismiss" class="text-xs ml-4 transition-opacity hover:opacity-60" style="color:var(--muted)">×</button>
-  </div>
-</div>
-<script>
-  (function() {
-    var banner = document.getElementById('founding-banner');
-    var dismiss = document.getElementById('dismiss-banner');
-    if (!banner) return;
-    var now = new Date();
-    var end = new Date('2026-08-01');
-    if (now >= end) return;
-    if (localStorage.getItem('h4ai_banner_dismissed') === '1') return;
-    banner.style.display = '';
-    if (dismiss) {
-      dismiss.addEventListener('click', function() {
-        banner.style.display = 'none';
-        localStorage.setItem('h4ai_banner_dismissed', '1');
-      });
-    }
-  })();
-</script>
-
 <!-- ── NAV ─────────────────────────────────────────────────── -->
 <nav class="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
   <a href="/" class="flex items-center gap-2.5 group">

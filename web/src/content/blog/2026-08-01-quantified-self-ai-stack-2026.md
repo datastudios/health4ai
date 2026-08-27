@@ -95,5 +95,5 @@ For Apple Watch users — which is most of the market — the pipeline described
 
 ---
 
-health4ai is free through July. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
 [Download on the App Store →](https://health4.ai)

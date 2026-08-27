@@ -97,5 +97,5 @@ The MCP server creates a new psycopg2 connection per tool call. Connection pooli
 
 ---
 
-health4ai is free through July. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
 [Download on the App Store →](https://health4.ai)

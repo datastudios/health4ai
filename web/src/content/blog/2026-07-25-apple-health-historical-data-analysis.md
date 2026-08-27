@@ -152,5 +152,5 @@ These are the questions worth asking once the data is accessible. They require h
 
 ---
 
-health4ai is free through July. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
 [Download on the App Store →](https://health4.ai)
