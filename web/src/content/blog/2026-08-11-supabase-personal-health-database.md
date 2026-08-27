@@ -146,5 +146,5 @@ The health4ai `.env` accepts either connection string. For most setups, the dire
 
 ---
 
-health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access.  
 [Download on the App Store →](https://health4.ai)

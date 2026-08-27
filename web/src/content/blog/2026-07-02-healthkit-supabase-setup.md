@@ -146,5 +146,5 @@ For a multi-year dataset you might see several million rows in `healthkit_metric
 
 ---
 
-health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access.  
 [Download on the App Store →](https://health4.ai)

@@ -149,5 +149,5 @@ The AI doesn't need to interpret the data for you to benefit from having it. Kno
 
 ---
 
-health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access.  
 [Download on the App Store →](https://health4.ai)

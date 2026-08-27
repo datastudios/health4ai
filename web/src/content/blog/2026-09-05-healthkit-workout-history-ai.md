@@ -155,5 +155,5 @@ That's a useful monthly review in one prompt.
 
 ---
 
-health4ai: Free while in early access. Everyone in the founding batch gets lifetime access at $0.  
+health4ai: Free while in early access.  
 [Download on the App Store →](https://health4.ai)
