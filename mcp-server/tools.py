@@ -409,13 +409,13 @@ def get_health_summary(days: int = 7) -> dict:
     """
     Overview of key health metrics for the past N days.
     Returns avg steps, avg sleep, avg HRV, avg resting HR, workout count.
+    Tier-aware: windows beyond RAW_CUTOFF_DAYS transparently merge in daily summaries for
+    steps/HRV/resting HR. Sleep and workouts are never compacted, so those stay raw-only.
     """
+    days = _clamp_days(days)
     uid = current_user_id.get()
     since = _since(days)
 
-    steps_rows = _fetch_metrics(STEPS, uid, since)
-    hrv_rows = _fetch_metrics(HRV, uid, since)
-    resting_hr_rows = _fetch_metrics(RESTING_HR, uid, since)
     sleep_rows = _fetch_metrics(SLEEP, uid, since)
     workout_rows = _fetch_metrics(WORKOUT, uid, since, limit=50)
 
@@ -427,6 +427,37 @@ def get_health_summary(days: int = 7) -> dict:
         vals = [r["value"] for r in rows if r.get("value") is not None]
         return round(sum(vals), 0) if vals else None
 
+    if days > RAW_CUTOFF_DAYS:
+        steps_points = _get_tiered_daily(STEPS, uid, days)
+        hrv_points = _get_tiered_daily(HRV, uid, days)
+        rhr_points = _get_tiered_daily(RESTING_HR, uid, days)
+
+        steps_total = round(sum(p["sum_value"] for p in steps_points), 0) if steps_points else None
+        steps_daily_avg = _daily_total_avg(steps_points)
+        steps_days_with_data = len(steps_points)
+
+        hrv_avg = _weighted_mean(hrv_points)
+        hrv_latest = hrv_points[-1]["avg_value"] if hrv_points else None
+        hrv_readings = sum(p["sample_count"] for p in hrv_points)
+
+        rhr_avg = _weighted_mean(rhr_points)
+        rhr_latest = rhr_points[-1]["avg_value"] if rhr_points else None
+    else:
+        steps_rows = _fetch_metrics(STEPS, uid, since)
+        hrv_rows = _fetch_metrics(HRV, uid, since)
+        resting_hr_rows = _fetch_metrics(RESTING_HR, uid, since)
+
+        steps_total = total(steps_rows)
+        steps_daily_avg = _avg_daily_total_from_raw(steps_rows)
+        steps_days_with_data = len({str(r["started_at"])[:10] for r in steps_rows})
+
+        hrv_avg = avg(hrv_rows)
+        hrv_latest = hrv_rows[0]["value"] if hrv_rows else None
+        hrv_readings = len(hrv_rows)
+
+        rhr_avg = avg(resting_hr_rows)
+        rhr_latest = resting_hr_rows[0]["value"] if resting_hr_rows else None
+
     # Sleep: sum duration of "asleep" stages per day
     sleep_stages = [
         r for r in sleep_rows
@@ -436,18 +467,18 @@ def get_health_summary(days: int = 7) -> dict:
     return {
         "period_days": days,
         "steps": {
-            "total": total(steps_rows),
-            "daily_avg": _avg_daily_total_from_raw(steps_rows),
-            "days_with_data": len({str(r["started_at"])[:10] for r in steps_rows}),
+            "total": steps_total,
+            "daily_avg": steps_daily_avg,
+            "days_with_data": steps_days_with_data,
         },
         "hrv_sdnn_ms": {
-            "avg": avg(hrv_rows),
-            "latest": hrv_rows[0]["value"] if hrv_rows else None,
-            "readings": len(hrv_rows),
+            "avg": hrv_avg,
+            "latest": hrv_latest,
+            "readings": hrv_readings,
         },
         "resting_heart_rate_bpm": {
-            "avg": avg(resting_hr_rows),
-            "latest": resting_hr_rows[0]["value"] if resting_hr_rows else None,
+            "avg": rhr_avg,
+            "latest": rhr_latest,
         },
         "sleep": {
             "total_records": len(sleep_rows),
@@ -688,6 +719,9 @@ def get_daily_snapshot(date: str = "") -> dict:
     """
     Everything recorded for a specific date (YYYY-MM-DD). Defaults to today.
     Returns steps, sleep, workouts, HRV, resting HR, active energy, and all other metrics.
+    Quantity-metric highlights are tier-aware: dates older than RAW_CUTOFF_DAYS fall back
+    to healthkit_daily_summaries once compaction has deleted that day's raw rows. Sleep and
+    workout fields stay raw-only (those types are never compacted, so full detail persists).
     """
     uid = current_user_id.get()
     if not date:
@@ -720,19 +754,40 @@ def get_daily_snapshot(date: str = "") -> dict:
         vals = [r["value"] for r in by_type.get(metric, []) if r.get("value")]
         return round(sum(vals), 0) if vals else None
 
+    cutoff_date = (datetime.now(timezone.utc).date() - timedelta(days=RAW_CUTOFF_DAYS)).isoformat()
+    is_historical = date < cutoff_date
+    highlights_fallback_used = False
+
+    def highlight(metric: str, cumulative: bool) -> float | None:
+        nonlocal highlights_fallback_used
+        val = sum_val(metric) if cumulative else first_val(metric)
+        if val is not None or not is_historical:
+            return val
+        # Raw rows for this date have already been compacted away — fall back to the
+        # daily summary (same helper _daily_series_for_range/_get_tiered_daily use elsewhere).
+        srows = _fetch_summaries_range(metric, uid, date, date)
+        if not srows:
+            return None
+        highlights_fallback_used = True
+        summary_val = srows[0].get("sum_value") if cumulative else srows[0].get("avg_value")
+        return round(summary_val, 1) if summary_val is not None else None
+
+    highlights = {
+        "steps": highlight(STEPS, cumulative=True),
+        "active_energy_cal": highlight(ACTIVE_ENERGY, cumulative=True),
+        "resting_hr_bpm": highlight(RESTING_HR, cumulative=False),
+        "hrv_sdnn_ms": highlight(HRV, cumulative=False),
+        "weight_kg": highlight(WEIGHT, cumulative=False),
+    }
+
     return {
         "date": date,
         "total_records": len(rows),
         "truncated": len(rows) >= 1000,
         "truncation_note": "Use query_metric with a specific metric_type to retrieve complete data for a single metric." if len(rows) >= 1000 else None,
         "metrics_present": sorted(by_type.keys()),
-        "highlights": {
-            "steps": sum_val(STEPS),
-            "active_energy_cal": sum_val(ACTIVE_ENERGY),
-            "resting_hr_bpm": first_val(RESTING_HR),
-            "hrv_sdnn_ms": first_val(HRV),
-            "weight_kg": first_val(WEIGHT),
-        },
+        "highlights": highlights,
+        "highlights_source": "daily_summaries (compacted)" if highlights_fallback_used else "raw",
         "workouts": [
             {
                 "type": (r.get("metadata") or {}).get("workout_type"),
@@ -819,7 +874,10 @@ def get_coaching_brief() -> dict:
     sleep_14d = _fetch_metrics(SLEEP, uid, since_14d, limit=500, source_filter="Oura")
     workouts_30d = _fetch_metrics(WORKOUT, uid, since_30d, limit=50)
     steps_7d = _fetch_metrics(STEPS, uid, since_7d, limit=500)
-    vo2_rows = _fetch_metrics(VO2MAX, uid, _since(365), limit=50)
+    # Tier-aware: VO2Max readings are infrequent (Watch Cardio Fitness), so the most
+    # recent one is often already past RAW_CUTOFF_DAYS and would read as None from a
+    # raw-only fetch even though real history exists in daily summaries.
+    vo2_points = _get_tiered_daily(VO2MAX, uid, 365)
     weight_rows = _fetch_metrics(WEIGHT, uid, since_30d, limit=30)
     energy_7d = _fetch_metrics(ACTIVE_ENERGY, uid, since_7d, limit=500)
 
@@ -903,7 +961,7 @@ def get_coaching_brief() -> dict:
             "avg_active_energy_cal": _avg_daily_total_from_raw(energy_7d),
         },
         "fitness_markers": {
-            "vo2max_latest": latest(vo2_rows),
+            "vo2max_latest": vo2_points[-1]["avg_value"] if vo2_points else None,
             "weight_kg_latest": latest(weight_rows),
             "weight_kg_30d_ago": weight_rows[-1]["value"] if len(weight_rows) > 1 else None,
         },
