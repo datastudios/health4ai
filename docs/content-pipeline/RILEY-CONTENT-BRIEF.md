@@ -68,12 +68,48 @@ Claude Code, Claude Desktop, Cursor, any MCP-compatible client, Ollama (local, z
 Free through July 31, 2026. Founding batch = lifetime access at $0. Future pricing TBD.
 
 ### Competitors (use accurately in comparison content)
-- **Health Auto Export** ($24.99 lifetime): established app, but MCP server is same-WiFi TCP only — doesn't work remotely. Background sync is unreliable (iOS throttling).
-- **VitalTrends** ($5/mo): TestFlight only (not App Store), closed source, BGProcessingTask sync (less reliable than HKObserverQuery)
-- **Open Wearables** (free, self-hosted): open source, multi-device, BUT no App Store app — Discord TestFlight invite required, Docker setup complexity
-- **Health Bridge by Alex Morris** (free): syncs HealthKit → Postgres directly, but no MCP server, no hosted tier, user must supply their own database and figure out AI integration
-- **Claude / ChatGPT native connectors**: web-product features only — don't reach Claude Code, API clients, n8n, or any MCP client outside claude.ai/ChatGPT web UI
-- **GitHub repos** (vpetersson, shuyangli, etc.): XML-export-only, no iOS app, no background sync, developer-only
+**REFRESHED 2026-08-27 — the entries below were stale (some materially wrong); verify against
+`public.health4ai_competitor_intel` before publishing any comparison claim, and re-check that
+table's `audit_date` is current before trusting even this refresh.**
+
+- **Claude's native Apple Health connector** (Anthropic, beta): iOS-app-only, read-only, Pro/Max-gated,
+  US-only. No MCP server, no API, no reach outside the Claude app itself — does not touch Claude
+  Code, Claude Desktop, Cursor, or any MCP client. This is the accurate framing (the old entry below
+  correctly captured this but under a generic "Claude/ChatGPT" umbrella — split out, they behave
+  identically but are separate products worth naming individually for SEO).
+- **ChatGPT Health** (OpenAI, relaunched 2026-07-23): available on ALL tiers including Free (not
+  paid-gated), web + iOS. Fully cloud-based — data lands on OpenAI's servers, persists 30 days after
+  disconnect. No API/MCP/export path out. Same "closed silo" framing as Claude's connector.
+- **Health Auto Export** ($24.99 lifetime, HealthyApps): established app — but it NOW HAS ITS OWN
+  MCP server (`HealthyApps/health-auto-export-mcp-server` on GitHub), which this brief previously
+  didn't know about. Do not claim "no MCP server" for this product — re-verify current sync
+  reliability/remote-access claims before using them in an article; the old same-WiFi-only framing
+  is unconfirmed as still accurate.
+- **MetricBridge / Health Export AI** (Philip D'Souza, healthexport.dev) — NEW, not in the prior
+  version of this brief. A genuinely close positioning match: zero-dependency, local-first, "any AI
+  agent," no accounts. The real differentiator: it has NO PERSISTENT DATABASE — a flat-file JSON
+  snapshot refreshed on an app-controlled schedule, stdio-only (no remote MCP endpoint). health4ai's
+  Postgres-backed history/correlation and true remote access are the accurate contrast points here,
+  not "no MCP server" (it has one).
+- **VitalTrends** ($5/mo-$99 lifetime, vitaltrends.net): the "TestFlight only" claim is WRONG as of
+  this refresh — it's now a live, paid, web-dashboard product (Monthly/Yearly/Lifetime tiers, 14-day
+  refund) connecting WHOOP/Apple Health/Oura/Withings/Hevy. Still closed source, still hosted (not
+  user-owned Postgres) — that contrast still holds and is the accurate angle.
+- **Open Wearables** (free + Enterprise tier, the-momentum): the "Discord/TestFlight gated" claim is
+  WRONG as of this refresh — it's now a fully open, 2.4k-star MIT project, `docker compose up`, no
+  waitlist, supporting Garmin/Whoop/Oura/Polar/Suunto/Samsung/Apple Health. The accurate contrast:
+  it has NO consumer App Store app at all — it's a developer platform requiring self-hosted
+  Postgres/Redis/Celery, not "gated," just not a consumer product.
+- **Health Bridge by Alex Morris** (free): still accurate as originally written — syncs HealthKit →
+  Postgres, no MCP server, no AI layer, BYO database. NOTE: a different, unrelated project also
+  named "Health Bridge" (Health Bridge for AI, healthbridge.chanhyo.dev) DOES ship an open-source
+  MCP server — do not conflate the two under one name in any article.
+- **Open-source Apple Health MCP cluster** (GitHub: neiltron ~563 stars, the-momentum legacy ~257,
+  vpetersson, davidmosiah, alphonsekoh, others): treat as ONE category, not individually-named
+  competitors — all share the same pattern (manual "Export Health Data" from the iPhone, load into
+  SQLite/DuckDB, no sync, no background updates). This is the most reusable comparison point in the
+  whole brief: health4ai is the only free App Store app in this category with true background
+  HealthKit sync.
 
 ---
 
