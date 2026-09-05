@@ -81,6 +81,10 @@ const metaPixelId = import.meta.env.PUBLIC_META_PIXEL_ID as string | undefined;
   * { box-sizing: border-box; }
 
   :root {
+    /* Without this the UA renders form controls in its LIGHT scheme, so the
+       unchecked consent box draws as a stark white square on a dark page. Also
+       stops autofill painting the email inputs yellow. */
+    color-scheme: dark;
     --accent: #ff2d78;
     --accent-light: #ff6b9d;
     --accent-glow: rgba(255, 45, 120, 0.22);

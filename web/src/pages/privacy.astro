@@ -1,7 +1,12 @@
 ---
 import Layout from '../layouts/Layout.astro';
-const lastUpdated = '2026-06-18';
+const lastUpdated = '2026-09-04';
 ---
+<style>
+  /* Arriving from the consent checkbox's "shared with Apple" link drops the
+     reader mid-list; mark which bullet they landed on. */
+  li:target { border-left: 2px solid var(--accent); padding-left: 12px; margin-left: -14px; }
+</style>
 <Layout
   title="Privacy Policy — health4.ai"
   description="How health4.ai handles your Apple Health data."
@@ -22,7 +27,7 @@ const lastUpdated = '2026-06-18';
       <h2 class="text-white font-semibold text-base mb-3">1. What data we collect</h2>
       <ul class="text-neutral-400 text-sm leading-relaxed space-y-2 list-none pl-0">
         <li><strong class="text-neutral-200">Health data — we do not collect it.</strong> HealthKit metrics you authorize flow directly from your device to the Postgres database you configure (Supabase, Neon, or self-hosted). health4.ai never receives, stores, or has access to your health data. A cloud AI provider you separately connect to may process data you choose to send to it.</li>
-        <li><strong class="text-neutral-200">Account data</strong> — email address (waitlist sign-ups only), used solely to notify you at App Store launch.</li>
+        <li><strong class="text-neutral-200">Account data</strong> — email address (waitlist sign-ups only), used to notify you at App Store launch and, <strong class="text-neutral-200">only if you tick the box asking for it</strong>, to send you a TestFlight beta invitation.</li>
         <li><strong class="text-neutral-200">Usage data</strong> — anonymous page views and feature interaction events via PostHog (US-hosted). PostHog never receives health data. We do not use advertising cookies or trackers.</li>
       </ul>
     </section>
@@ -31,6 +36,7 @@ const lastUpdated = '2026-06-18';
       <h2 class="text-white font-semibold text-base mb-3">2. How we use it</h2>
       <ul class="text-neutral-400 text-sm leading-relaxed space-y-2 list-none pl-0">
         <li>To notify you at App Store launch (waitlist email only).</li>
+        <li id="testflight" class="scroll-mt-6"><strong class="text-neutral-200">TestFlight invitations — opt-in, and shared with Apple.</strong> If you tick the TestFlight box when joining the waitlist, we pass your email address to Apple's App Store Connect so Apple can send you a beta invitation. Apple sends that email, not us. Anyone with administrator access to our App Store Connect account can see the addresses of enrolled testers. If you leave the box unticked we never pass your address to Apple, and you stay on the launch-notification list. Ask us at any time to remove you as a tester.</li>
         <li>To improve reliability — aggregated, non-identifiable usage metrics only.</li>
       </ul>
       <p class="text-neutral-400 text-sm mt-3">

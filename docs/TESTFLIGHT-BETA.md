@@ -1,5 +1,17 @@
 # Private TestFlight beta
 
+> **Scope note added 2026-09-04.** The steps below are correct for a beta where
+> each tester operates their own Supabase project, which is how health4ai works.
+> Two mechanical prerequisites were missing when this was written and are now in
+> place: an EXTERNAL beta group (an internal group accepts only Apple IDs already
+> on the developer account) and builds marked `APP_STORE_ELIGIBLE` rather than
+> `INTERNAL_ONLY`. Beta App Review still has to pass before anyone outside the
+> team can install.
+>
+> The "required test evidence" section at the bottom is no longer a manual
+> checklist: `scripts/verify_tenant_isolation.py` runs it, and fails if it proves
+> isolation while writing zero rows.
+
 ## Privacy boundary
 
 Each tester must use a Supabase project and Supabase account that they control.

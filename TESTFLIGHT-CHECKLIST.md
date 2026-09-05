@@ -1,6 +1,29 @@
 # health4ai — TestFlight Tester Checklist
 
-Updated: 2026-08-09. The app is ready for a privacy-preserving private beta.
+Updated: 2026-09-04.
+
+> **STOP — this checklist describes a private beta among people who can operate a
+> database. Re-measured 2026-09-04 against the live systems rather than against
+> this file, which disagreed with all of them.**
+>
+> - **Build 21 is VALID in App Store Connect.** This file previously said 17,
+>   `project.pbxproj` says 15. Ask the App Store Connect API, not a file.
+> - **Builds come from Xcode Cloud, not from Xcode on a laptop.** Build runs map
+>   1:1 onto build numbers, each triggered by a push to `main`. There is no
+>   distribution certificate on the dev machine, which is the tell.
+> - **Every build up to 21 was `buildDistributionAudience: INTERNAL_ONLY`**, set
+>   by the Xcode Cloud workflow's archive action. That is why external assignment
+>   failed with `422 Build is not in an externally assignable state`, and it is
+>   NOT patchable after upload — `PATCH /v1/builds/{id}` returns `409`. Fixed at
+>   the workflow; builds from 22 on are `APP_STORE_ELIGIBLE`.
+> - **The external group `Waitlist beta` now exists.** Before that the only group
+>   was internal, which accepts only Apple IDs already on the developer account.
+> - **The GitHub release workflow has never run** — 0 of 7 required secrets.
+>
+> Bring-your-own-backend is the product, not a limitation: each tester points the
+> app at a backend they control, and health4ai never receives anyone's health
+> data. `supabase/bootstrap/001` + `002` are the schema a tester installs in
+> their own project. Prove isolation with `scripts/verify_tenant_isolation.py`.
 
 ---
 
@@ -14,7 +37,7 @@ Updated: 2026-08-09. The app is ready for a privacy-preserving private beta.
 - [x] Hosted-tier DB tables dropped from Supabase (healthkit_api_keys, healthkit_setup_codes)
 - [x] Tenant-isolation migration and authenticated ingest safeguards added
 - [x] New installs default to a minimal Health data scope; existing completed installs retain their current scope
-- [x] Initial controlled upload completed through Xcode (App Store Connect build 17)
+- [x] Uploads happen through Xcode by hand — build 21 VALID as of 2026-09-04 (the GitHub workflow below is scaffolding, 0 of 7 secrets set)
 - [x] GitHub-gated TestFlight release workflow added; see [`docs/GITHUB-TESTFLIGHT.md`](docs/GITHUB-TESTFLIGHT.md)
 
 ---
