@@ -855,6 +855,63 @@ def get_long_term_trend(
     }
 
 
+FRESH_HOURS = 48  # older than this and a coaching brief must not cite a number as current
+
+
+def _newest_started_at(*row_lists: list[dict]) -> datetime | None:
+    newest = None
+    for rows in row_lists:
+        for r in rows:
+            ts = r.get("started_at")
+            if ts is None:
+                continue
+            if isinstance(ts, str):
+                try:
+                    ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if newest is None or ts > newest:
+                newest = ts
+    return newest
+
+
+def _data_status(hrv: list[dict], rhr: list[dict], sleep: list[dict], workouts: list[dict],
+                 steps: list[dict], now: datetime | None = None) -> dict:
+    """Machine-checkable freshness for the coaching brief.
+
+    Added 2026-09-05: the HealthKit feed had been silent for nine days and the brief still
+    answered "Recovery stable" with hrv null and zero workouts, which a coaching skill read
+    as a clean bill of health. Every consumer now gets the newest sample age up front.
+    """
+    now = now or datetime.now(timezone.utc)
+    newest = _newest_started_at(hrv, rhr, sleep, workouts, steps)
+    hours = round((now - newest).total_seconds() / 3600, 1) if newest else None
+    if newest is None:
+        status = "none"
+    elif hours <= FRESH_HOURS:
+        status = "fresh"
+    else:
+        status = "stale"
+    guidance = {
+        "fresh": "Data is current; numbers in this brief may be cited.",
+        "stale": (f"Newest sample is older than {FRESH_HOURS}h; do not cite any number here as "
+                  "current. A gap is device-not-worn unless a pipeline failure is shown."),
+        "none": "No samples in the query windows; nothing in this brief describes the current state.",
+    }[status]
+    return {
+        "status": status,
+        "newest_sample_at": newest.isoformat() if newest else None,
+        "hours_since_newest_sample": hours,
+        "fresh_threshold_hours": FRESH_HOURS,
+        "hrv_samples_14d": len(hrv),
+        "sleep_rows_14d": len(sleep),
+        "workouts_30d": len(workouts),
+        "guidance": guidance,
+    }
+
+
 def get_coaching_brief() -> dict:
     """
     Pre-session coaching brief for Brett — combines recent trends across all key metrics.
@@ -880,6 +937,7 @@ def get_coaching_brief() -> dict:
     vo2_points = _get_tiered_daily(VO2MAX, uid, 365)
     weight_rows = _fetch_metrics(WEIGHT, uid, since_30d, limit=30)
     energy_7d = _fetch_metrics(ACTIVE_ENERGY, uid, since_7d, limit=500)
+    data_status = _data_status(hrv_14d, rhr_14d, sleep_14d, workouts_30d, steps_7d)
 
     def avg(rows: list[dict]) -> float | None:
         vals = [r["value"] for r in rows if r.get("value") is not None]
@@ -927,6 +985,7 @@ def get_coaching_brief() -> dict:
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "data_status": data_status,
         "recovery": {
             "hrv_latest_ms": latest(hrv_14d),
             "hrv_7d_avg_ms": avg(hrv_14d[:7]) if hrv_14d else None,
@@ -935,7 +994,9 @@ def get_coaching_brief() -> dict:
             "resting_hr_latest_bpm": latest(rhr_14d),
             "resting_hr_7d_avg_bpm": avg(rhr_14d),
             "coaching_note": (
-                "Good recovery — normal or increased training load appropriate" if hrv_status == "improving"
+                "No HRV samples in the last 7 days; recovery cannot be assessed from this brief. Do not cite recovery."
+                if not hrv_recent
+                else "Good recovery — normal or increased training load appropriate" if hrv_status == "improving"
                 else "Recovery declining — prioritize sleep, reduce intensity if trend continues" if hrv_status == "declining"
                 else "Recovery stable"
             ),
