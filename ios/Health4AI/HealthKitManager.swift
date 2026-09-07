@@ -215,13 +215,29 @@ final class HealthKitManager {
 
     /// Requests read authorization only for the scope the user explicitly chose.
     /// Must be called from the main thread (presents HK auth sheet).
+    ///
+    /// The scope is persisted only after the request succeeds: a failed request must not
+    /// leave SyncEngine querying a scope the user never actually authorized.
     func requestAuthorization(scope: DataScope = HealthKitManager.selectedScope) async throws {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw HKError(.errorHealthDataUnavailable)
         }
-        UserDefaults.standard.set(scope.rawValue, forKey: DataScope.storageKey)
         let readTypes = Self.sampleTypes(for: scope)
         try await store.requestAuthorization(toShare: [], read: readTypes)
+        UserDefaults.standard.set(scope.rawValue, forKey: DataScope.storageKey)
+    }
+
+    /// Whether iOS would still present the authorization sheet for `scope`.
+    ///
+    /// This is the only API that answers the question for READ types —
+    /// `authorizationStatus(for:)` deliberately hides read permission to avoid leaking
+    /// which data a user has. Once every type in the scope has been asked about,
+    /// requesting again is a silent no-op, and the UI must route to Settings instead.
+    func needsAuthorizationRequest(scope: DataScope = HealthKitManager.selectedScope) async -> Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return false }
+        let readTypes = Set<HKObjectType>(Self.sampleTypes(for: scope))
+        let status = try? await store.statusForAuthorizationRequest(toShare: [], read: readTypes)
+        return status == .shouldRequest
     }
 
     // MARK: - Sample query

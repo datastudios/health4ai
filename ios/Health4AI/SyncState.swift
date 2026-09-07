@@ -29,6 +29,34 @@ enum RestAuthType: String, CaseIterable {
     }
 }
 
+// MARK: - Connection health
+
+/// Combined state of "signed in to your backend" and "health records are actually arriving".
+enum ConnectionHealth {
+    /// Signed in and health data is landing.
+    case connected
+    /// Signed in, but nothing has synced inside the freshness window.
+    case stalled
+    /// No backend account is connected.
+    case disconnected
+
+    var title: String {
+        switch self {
+        case .connected:    return "Active"
+        case .stalled:      return "No recent data"
+        case .disconnected: return "Not connected"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .connected:    return "checkmark.circle.fill"
+        case .stalled:      return "exclamationmark.circle.fill"
+        case .disconnected: return "circle.slash"
+        }
+    }
+}
+
 // MARK: - SyncState
 
 /// Central ObservableObject driving all SwiftUI state.
@@ -202,14 +230,48 @@ final class SyncState: ObservableObject {
         return Double(backfillSyncedRecords) / Double(backfillTotalRecords)
     }
 
-    var trackingSinceLabel: String {
-        if let earliest = backfillEarliestDate {
-            return "\(Calendar.current.component(.year, from: earliest))"
-        }
-        if let date = lastSyncDate {
-            return "Est. \(Calendar.current.component(.year, from: date))"
-        }
-        return "—"
+    /// How recently health data must have landed for the connection to read as healthy.
+    /// Background delivery is scheduled by iOS, so a gap of a few hours is normal;
+    /// two days without a record means something is actually broken.
+    nonisolated static let freshDataWindow: TimeInterval = 48 * 60 * 60
+
+    /// Pure decision function — `now` is injected so the 48-hour boundary is testable
+    /// without waiting on the clock.
+    nonisolated static func connectionHealth(isAuthenticated: Bool,
+                                             isSyncing: Bool,
+                                             isBackfilling: Bool,
+                                             lifetimeSyncedRecords: Int,
+                                             lastSyncDate: Date?,
+                                             now: Date = Date()) -> ConnectionHealth {
+        guard isAuthenticated else { return .disconnected }
+        if isBackfilling || isSyncing { return .connected }
+        guard lifetimeSyncedRecords > 0, let last = lastSyncDate else { return .stalled }
+        return now.timeIntervalSince(last) < freshDataWindow ? .connected : .stalled
+    }
+
+    /// True while health records are actually moving — not merely while an account is signed in.
+    var isHealthDataFlowing: Bool {
+        Self.connectionHealth(isAuthenticated: true,
+                              isSyncing: isSyncing,
+                              isBackfilling: isBackfilling,
+                              lifetimeSyncedRecords: lifetimeSyncedRecords,
+                              lastSyncDate: lastSyncDate) == .connected
+    }
+
+    /// Single signal combining backend auth and HealthKit delivery. Being signed in
+    /// while no health data arrives is the failure mode users could not previously see.
+    ///
+    /// Known limit: HealthKit never reports read authorization, and
+    /// `statusForAuthorizationRequest` returns `.unnecessary` after the first ask whether
+    /// the user granted or later revoked access. So access revoked in Settings cannot be
+    /// detected directly — it surfaces here only once delivery goes quiet past
+    /// `freshDataWindow`, which is the strongest signal the platform allows.
+    var connectionHealth: ConnectionHealth {
+        Self.connectionHealth(isAuthenticated: isAuthenticated,
+                              isSyncing: isSyncing,
+                              isBackfilling: isBackfilling,
+                              lifetimeSyncedRecords: lifetimeSyncedRecords,
+                              lastSyncDate: lastSyncDate)
     }
 
     var formattedLastSync: String {
