@@ -599,13 +599,15 @@ struct HomeView: View {
                     Spacer()
                 }
                 .padding()
-                // Tint the LABEL, not the Button. An explicit .foregroundStyle on the
-                // Button overrides SwiftUI's automatic disabled dimming, which left this
-                // row rendering full-strength blue while disabled mid-import — a dead
-                // control that looks tappable, which is worse than the ambiguity it
-                // was meant to fix.
-                .foregroundStyle(syncState.backfillCompleted ? Color.red : Color.accentColor)
             }
+            // .tint, not .foregroundStyle. The button style consults tint, so the
+            // automatic disabled dimming composes OVER it; an explicit foregroundStyle
+            // anywhere in the label subtree overrides that dimming instead, which left
+            // this row full-strength blue and looking tappable while disabled
+            // mid-import. Measured disabled rgb(197,197,199) with tint vs rgb(0,136,255)
+            // with foregroundStyle. Deliberately not a conditional colour keyed off the
+            // same predicate as .disabled — those two would drift apart.
+            .tint(syncState.backfillCompleted ? Color.red : Color.accentColor)
             .disabled(!syncState.isAuthenticated || syncState.isBackfilling)
             }
         }
