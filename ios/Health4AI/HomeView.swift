@@ -445,9 +445,14 @@ struct HomeView: View {
                             // which rendered a 138x28pt pill in a 338pt box — below the
                             // 44pt minimum this file's own design.md sets.
                             Button {
-                                BulkExportManager.shared.cancelBackfill()
-                                syncState.isBackfilling = false
-                                BulkExportManager.shared.startBackfill(syncState: syncState)
+                                // Await the actual stop. Restarting on a cancel REQUEST
+                                // races two runBackfill tasks against the same
+                                // UserDefaults-backed sets.
+                                Task {
+                                    await BulkExportManager.shared.cancelAndWait()
+                                    syncState.isBackfilling = false
+                                    BulkExportManager.shared.startBackfill(syncState: syncState)
+                                }
                             } label: {
                                 Text("Cancel and Resume")
                                     .font(.caption.weight(.medium))

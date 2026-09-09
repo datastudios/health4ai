@@ -201,7 +201,9 @@ final class SyncState: ObservableObject {
         let delta = posted - backfillSyncedRecords
         backfillSyncedRecords = posted
         backfillTotalRecords = total
-        if let s = stored { backfillStoredRecords = s }
+        // Assigned, not merged: nil means the run can no longer justify a stored figure,
+        // and must clear the old one rather than leave a stale number looking current.
+        backfillStoredRecords = stored
         // Earliest keeps the MINIMUM so "back to <date>" stays true as the sweep advances.
         // Current is assigned plainly — it is a position, not a high-water mark.
         if let e = earliest { backfillEarliestDate = min(e, backfillEarliestDate ?? e) }

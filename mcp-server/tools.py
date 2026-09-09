@@ -58,8 +58,26 @@ MAX_LIMIT = 1000
 
 
 def _connect():
-    """Open a new psycopg2 connection. Callers are responsible for closing it."""
-    return psycopg2.connect(DATABASE_URL)
+    """Open a new psycopg2 connection. Callers are responsible for closing it.
+
+    Timeouts are not optional here. Every call is a fresh TCP+TLS handshake to the
+    pooler, the tools are synchronous functions on a bounded worker threadpool, and a
+    single empty query_metric now costs two or three connections. Without
+    connect_timeout a stalled connect pins its worker indefinitely, and enough of those
+    stall the server for every tenant rather than just the caller who triggered it.
+
+    statement_timeout is deliberately NOT set here. Passing it via libpq `options` is
+    silently discarded by Supabase's transaction pooler: measured 2026-09-09, a
+    connection opened with `-c statement_timeout=15000` reported `SHOW statement_timeout`
+    = `2min`, the server default. Shipping that line would have been a fix that does
+    nothing while looking like protection. If a shorter query bound is wanted, set it on
+    the database role (ALTER ROLE ... SET statement_timeout) where the pooler cannot
+    drop it, and verify with SHOW rather than assuming.
+    """
+    return psycopg2.connect(
+        DATABASE_URL,
+        connect_timeout=int(os.environ.get("DB_CONNECT_TIMEOUT", "5")),
+    )
 
 
 def _clamp_days(days: int) -> int:
@@ -337,6 +355,28 @@ def _daily_total_avg(points: list[dict]) -> float | None:
 # Metrics where the meaningful number is the daily total (not mean of intervals)
 DISTANCE_WALKING = "HKQuantityTypeIdentifierDistanceWalkingRunning"
 
+# Written by the iPhone's own pedometer. A user who carries the phone accumulates these
+# whether or not they own any other device, so zero rows all-time really is anomalous.
+_IPHONE_INTRINSIC_METRICS = {STEPS, DISTANCE_WALKING}
+
+# Require a wearable. The iPhone has NO heart-rate sensor, and passive active-energy comes
+# from a Watch. For an iPhone-only user, zero rows here is the correct and normal state --
+# claiming a denied permission would accuse the majority of users of misconfiguring
+# something they never touched. Verified against real data 2026-09-09: every source_device
+# writing these two was a Watch, Oura, Withings or a chest strap; StepCount and
+# DistanceWalkingRunning both list "iPhone".
+_WEARABLE_METRICS = {HEART_RATE, ACTIVE_ENERGY}
+
+# Types that only exist if the user has a wearable feeding the pipeline. Presence of any
+# one of them is the positive evidence required before blaming a permission for an empty
+# wearable metric.
+_WEARABLE_EVIDENCE_METRICS = (
+    HRV, RESTING_HR,
+    "HKQuantityTypeIdentifierWalkingHeartRateAverage",
+    "HKQuantityTypeIdentifierOxygenSaturation",
+    "HKQuantityTypeIdentifierRespiratoryRate",
+)
+
 # Metrics an iPhone-carrying user necessarily accumulates. Zero rows ALL-TIME for one
 # of these is not "you did nothing" -- it means the type was never shared with the app.
 #
@@ -349,12 +389,7 @@ DISTANCE_WALKING = "HKQuantityTypeIdentifierDistanceWalkingRunning"
 # Found the hard way: four of these were silently denied on the author's own account
 # from 2026-06-17 to 2026-09-09 while every other type synced normally, and the iOS app
 # reported a green "Complete" the whole time.
-_ALWAYS_EXPECTED_METRICS = {
-    STEPS,
-    HEART_RATE,
-    ACTIVE_ENERGY,
-    DISTANCE_WALKING,
-}
+_ALWAYS_EXPECTED_METRICS = _IPHONE_INTRINSIC_METRICS | _WEARABLE_METRICS
 
 _CUMULATIVE_METRICS = {
     STEPS,
@@ -641,24 +676,42 @@ def get_hrv_trend(days: int = 30) -> dict:
     }
 
 
-def _has_any_rows_alltime(metric_type: str, user_id: str) -> bool:
-    """Has this user EVER had a row of this type, in raw or summarised storage?
+def _absence_facts(metric_type: str, user_id: str) -> dict:
+    """Three EXISTS checks in ONE statement on ONE connection.
 
-    Checks both tables: compaction deletes raw rows past RAW_CUTOFF_DAYS, so a metric
-    that stopped months ago has no raw rows at all and would otherwise look like it had
-    never existed.
+    Separate helpers would open two or three connections per empty result; every
+    _connect() is a fresh TCP+TLS handshake to the pooler, and an empty query_metric
+    already costs one or two. Answering all three questions together keeps the added
+    cost at exactly one connection.
+
+    Both storage tables are checked for the metric: compaction deletes raw rows past
+    RAW_CUTOFF_DAYS, so a metric that stopped months ago has no raw rows at all and
+    would otherwise look as though it had never existed.
     """
+    evidence = tuple(_WEARABLE_EVIDENCE_METRICS)
     conn = _connect()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                f"SELECT EXISTS (SELECT 1 FROM {TABLE} "
-                f"WHERE user_id = %s AND metric_type = %s) "
-                f"OR EXISTS (SELECT 1 FROM {SUMMARY_TABLE} "
-                f"WHERE user_id = %s AND metric_type = %s)",
-                (user_id, metric_type, user_id, metric_type),
+                f"""
+                SELECT
+                  EXISTS (SELECT 1 FROM {TABLE}
+                           WHERE user_id = %s AND metric_type = %s)
+                  OR EXISTS (SELECT 1 FROM {SUMMARY_TABLE}
+                              WHERE user_id = %s AND metric_type = %s),
+                  EXISTS (SELECT 1 FROM {TABLE} WHERE user_id = %s),
+                  EXISTS (SELECT 1 FROM {TABLE}
+                           WHERE user_id = %s AND metric_type = ANY(%s))
+                """,
+                (user_id, metric_type, user_id, metric_type,
+                 user_id, user_id, list(evidence)),
             )
-            return bool(cur.fetchone()[0])
+            row = cur.fetchone()
+            return {
+                "has_this_metric": bool(row[0]),
+                "has_any_data": bool(row[1]),
+                "has_wearable": bool(row[2]),
+            }
     finally:
         conn.close()
 
@@ -666,14 +719,18 @@ def _has_any_rows_alltime(metric_type: str, user_id: str) -> bool:
 def _absence_note(metric_type: str, user_id: str, count: int) -> dict | None:
     """Explain a zero result, or return None when there is nothing to explain.
 
-    An empty result has two very different causes and the API cannot tell them apart
-    on its own, so this resolves the ambiguity with a second question the caller
-    cannot ask: has this type EVER produced a row for this user?
+    An empty result has several causes the HealthKit API cannot tell apart, so this
+    resolves them with questions the caller cannot ask. The governing rule: NEVER assert
+    a denied permission without positive evidence that (a) the pipeline works for this
+    user and (b) a device they own produces this type. Getting that wrong tells someone
+    they misconfigured a setting they never touched, which is worse than the bare zero
+    it replaced -- an assistant is instructed not to hedge it.
 
     Returned only when count == 0, so a normal answer is never cluttered.
     """
     if count:
         return None
+
     if metric_type not in _ALWAYS_EXPECTED_METRICS:
         return {
             "status": "empty_window",
@@ -683,7 +740,22 @@ def _absence_note(metric_type: str, user_id: str, count: int) -> dict | None:
                 "without corroboration."
             ),
         }
-    if _has_any_rows_alltime(metric_type, user_id):
+
+    try:
+        facts = _absence_facts(metric_type, user_id)
+    except Exception:
+        # Fail toward the mild note. This query is a new failure mode on a path that
+        # used to always succeed, and it fails hardest exactly when the database is
+        # already stressed -- which is not the moment to start accusing the user.
+        return {
+            "status": "empty_window",
+            "guidance": (
+                "No samples in this window, and the follow-up check could not run. "
+                "Report only that this window is empty; do not infer a cause."
+            ),
+        }
+
+    if facts["has_this_metric"]:
         return {
             "status": "empty_window",
             "guidance": (
@@ -691,17 +763,41 @@ def _absence_note(metric_type: str, user_id: str, count: int) -> dict | None:
                 "the pipeline works. Treat it as a gap in this window, not as a zero."
             ),
         }
+
+    if not facts["has_any_data"]:
+        return {
+            "status": "no_data_yet",
+            "guidance": (
+                "This account has no health data of any kind yet, so the first import "
+                "has probably not finished. Say that setup looks incomplete. Do NOT "
+                "suggest a permission problem, and do not report any value as zero."
+            ),
+        }
+
+    if metric_type in _WEARABLE_METRICS and not facts["has_wearable"]:
+        return {
+            "status": "no_recording_device",
+            "guidance": (
+                f"{metric_type} needs a wearable -- the iPhone has no heart-rate sensor "
+                "and does not record active energy on its own. Nothing in this account "
+                "looks like it came from a watch or ring, so the likeliest explanation "
+                "is simply that no paired device records this. Ask before asserting "
+                "either that, or a permission problem. Do not report a zero."
+            ),
+        }
+
     return {
         "status": "never_recorded",
         "likely_cause": "permission_not_granted",
         "guidance": (
-            f"{metric_type} has NEVER produced a sample for this user, which is not "
-            "possible for a metric of this kind if it were being shared. It is almost "
-            "certainly switched off for health4ai in the Apple Health app "
-            "(Sharing -> Apps). HealthKit reports a denied read as an empty result, so "
-            "neither the app nor this server can detect it any other way. DO NOT tell "
-            "the user this value is zero or that they were inactive. Tell them the "
-            "metric is not being shared and to enable it, then re-run the import."
+            f"{metric_type} has never produced a sample for this user, although other "
+            "data has synced and a device that records it appears to be present. The "
+            "likeliest explanation is that this type is switched off for health4ai in "
+            "the Apple Health app (Sharing -> Apps). HealthKit reports a denied read as "
+            "an empty result, so neither the app nor this server can confirm it any "
+            "other way. Do NOT tell the user this value is zero or that they were "
+            "inactive. Suggest checking that the metric is shared, then re-running the "
+            "import."
         ),
     }
 

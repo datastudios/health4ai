@@ -247,7 +247,10 @@ final class SyncEngine {
             return nil
         }
         if let n = obj["inserted"] as? Int { return n }
-        if let d = obj["inserted"] as? Double { return Int(d) }
+        // Int(exactly:), never Int(_:). The endpoint is user-supplied, and Int(Double)
+        // TRAPS on anything outside Int's range — a server echoing {"inserted": 1e30}
+        // would crash the app on every batch. nil is the contract for "unknown".
+        if let d = obj["inserted"] as? Double { return Int(exactly: d.rounded()) }
         return nil
     }
 

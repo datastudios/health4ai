@@ -99,6 +99,11 @@ final class BulkExportManager {
             await MainActor.run {
                 syncState.isBackfilling = true
                 syncState.backfillError = nil
+                // Start the stall clock HERE, not at the first batch. Seeded from the
+                // first batch, a run that wedges before ever posting — auth hang, wedged
+                // first query, no network — leaves it nil, and isImportStalled returns
+                // false forever. The detector would miss the total failure it exists for.
+                syncState.backfillLastBatchAt = Date()
             }
             await self.runBackfill(syncState: syncState)
             self.currentTask = nil
@@ -108,6 +113,21 @@ final class BulkExportManager {
     func cancelBackfill() {
         currentTask?.cancel()
         currentTask = nil
+    }
+
+    /// Cancel and WAIT for the run to actually stop before returning.
+    ///
+    /// cancelBackfill() only *requests* cancellation and clears currentTask synchronously,
+    /// so an immediate startBackfill() passes its `currentTask == nil` guard and a SECOND
+    /// runBackfill begins while the first is still unwinding — both then read-modify-write
+    /// completedTypes and emptyHighVolumeTypes from different executors, and both report
+    /// progress from their own local counters, which can make the on-screen count jump
+    /// backwards. Any restart path must await this, not cancelBackfill().
+    func cancelAndWait() async {
+        let running = currentTask
+        running?.cancel()
+        currentTask = nil
+        await running?.value
     }
 
     // MARK: - Backfill execution
@@ -121,6 +141,7 @@ final class BulkExportManager {
         // repeated range already exists. Only `stored` is evidence anything was added.
         var totalPosted = 0
         var totalStored = 0
+        var storedCountUnreliable = false
         let totalTypes = remainingTypes.count
         var typesCompleted = 0
 
@@ -135,11 +156,19 @@ final class BulkExportManager {
                     serverURL: serverURL,
                     onBatch: { batchPosted, batchStored, earliestDate, latestDate in
                         totalPosted += batchPosted
-                        if let s = batchStored { totalStored += s }
+                        if let s = batchStored {
+                            totalStored += s
+                        } else if batchPosted > 0 {
+                            // A batch that posted rows but reported no count makes the
+                            // running total an undercount we can never reconcile. Latch
+                            // the whole run to "unknown" rather than let a stale figure
+                            // keep looking authoritative while it silently stops tracking.
+                            storedCountUnreliable = true
+                        }
                         Task { @MainActor in
                             syncState.recordBackfillProgress(
                                 posted: totalPosted,
-                                stored: batchStored == nil ? nil : totalStored,
+                                stored: storedCountUnreliable ? nil : totalStored,
                                 total: max(totalPosted, syncState.backfillTotalRecords),
                                 earliest: earliestDate,
                                 latest: latestDate
@@ -240,7 +269,12 @@ final class BulkExportManager {
         var chunkStart = checkpointTS > 0 ? Date(timeIntervalSince1970: checkpointTS) : floor
 
         while chunkStart < now {
-            if Task.isCancelled { break }
+            // THROW, never break. Breaking falls through to the checkpoint-clear and
+            // returns normally, and runBackfill reads a normal return as "this type
+            // finished" — so a cancelled type was marked fully imported AND lost its
+            // resume point. checkCancellation() raises CancellationError, which
+            // runBackfill already handles by leaving the type un-completed.
+            try Task.checkCancellation()
 
             let chunkEnd = min(calendar.date(byAdding: .day, value: chunkDays, to: chunkStart)!, now)
 
@@ -270,7 +304,14 @@ final class BulkExportManager {
                     }
 
                     for batch in batches {
-                        if Task.isCancelled { break }
+                        // Cancellation mid-chunk means the REMAINING batches were never
+                        // posted. Advancing the checkpoint past this window would mark
+                        // those samples done forever — silent, permanent data loss on the
+                        // exact interrupt-and-resume path the stall recovery tells a user
+                        // to take. Leave the checkpoint where it is and let the resume
+                        // re-query this window; re-posting is idempotent (the endpoint
+                        // upserts), so a partial repeat is free and a skip is not.
+                        try Task.checkCancellation()
                         let stored = try await syncEngine.postSamples(
                             batch, token: token, serverURL: serverURL)
                         // Dates come from the batch, not from nil. Passing nil here meant
@@ -281,10 +322,17 @@ final class BulkExportManager {
                         totalCount += batch.count
                     }
                 }
+            } else {
+                // An empty window is still work. Without this the stall detector, which
+                // reads only the last batch time, fires on a healthy import sweeping a
+                // type the user has never recorded: ~53 chunks back to 2013, none of
+                // which post anything.
+                onBatch(0, nil, nil, nil)
             }
 
             chunkStart = chunkEnd
-            // Save checkpoint after each chunk so kills resume here, not from 2013
+            // Save checkpoint after each chunk so kills resume here, not from 2013.
+            // Reached only when every batch in the chunk posted — see the early return.
             UserDefaults.standard.set(chunkEnd.timeIntervalSince1970, forKey: checkpointKey)
         }
 
