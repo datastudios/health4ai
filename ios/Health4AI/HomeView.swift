@@ -244,32 +244,30 @@ struct HomeView: View {
             // remaining actions are two ways to review a setting, and rendering either
             // as a full-width tinted button reads as an unresolved error on a screen
             // that is in fact healthy.
-            VStack(spacing: 10) {
-                if needsHealthPrompt {
-                    Button {
-                        requestHealthAccess(scope: healthScope)
-                    } label: {
-                        Text("Grant Health Access")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.pink)
-                    .disabled(isRequestingHealth)
+            if needsHealthPrompt {
+                Button {
+                    requestHealthAccess(scope: healthScope)
+                } label: {
+                    Text("Grant Health Access")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                // Per-type sharing lives in the Health app, and openURL already falls
-                // back to iOS Settings when the scheme is declined — so a separate
-                // Settings button would duplicate a fallback the code performs, and
-                // land the user further from the toggles they came to change.
-                // Before the grant there is nothing there to manage, so it stays hidden.
-                if !needsHealthPrompt {
-                    Button {
-                        openURL("x-apple-health://", fallback: UIApplication.openSettingsURLString)
-                    } label: {
-                        Text("Open Health App")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .tint(.pink)
+                .disabled(isRequestingHealth)
+            }
+            // Per-type sharing lives in the Health app, and openURL already falls
+            // back to iOS Settings when the scheme is declined — so a separate
+            // Settings button would duplicate a fallback the code performs, and
+            // land the user further from the toggles they came to change.
+            // Before the grant there is nothing there to manage, so it stays hidden.
+            if !needsHealthPrompt {
+                Button {
+                    openURL("x-apple-health://", fallback: UIApplication.openSettingsURLString)
+                } label: {
+                    Text("Open Health App")
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
+                .buttonStyle(.bordered)
             }
         }
         .padding()
@@ -376,7 +374,7 @@ struct HomeView: View {
                 Text("Import all historical health records from HealthKit.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Run Backfill") {
+                Button("Run Import") {
                     BulkExportManager.shared.startBackfill(syncState: syncState)
                 }
                 .disabled(!syncState.isAuthenticated)
@@ -409,17 +407,26 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
             // The copy asks the user to run the backfill again, so the retry belongs
             // here rather than unlabelled in a separate card further down the screen.
-            Button {
-                BulkExportManager.shared.resetBackfill()
-                syncState.backfillCompleted = false
-                BulkExportManager.shared.startBackfill(syncState: syncState)
-            } label: {
+            Button(action: rerunImport) {
                 Text("Re-run Import")
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.bordered)
             .disabled(!syncState.isAuthenticated || syncState.isBackfilling)
         }
+    }
+
+    /// A re-run has to clear per-type completion first. `runBackfill` skips every type
+    /// already in `completedTypes`, so calling startBackfill on a finished import swept
+    /// zero types, latched "complete" again and returned instantly — leaving a user
+    /// whose data is actually missing with no way to retry. Resuming an unfinished run
+    /// must NOT reset, which is why this is only reachable once the import completed.
+    private func rerunImport() {
+        if syncState.backfillCompleted {
+            BulkExportManager.shared.resetBackfill()
+            syncState.backfillCompleted = false
+        }
+        BulkExportManager.shared.startBackfill(syncState: syncState)
     }
 
     // MARK: - Actions card
@@ -442,22 +449,11 @@ struct HomeView: View {
             }
             .disabled(syncState.isSyncing || !syncState.isAuthenticated)
             Divider().padding(.leading, 44)
-            Button {
-                // A re-run has to clear per-type completion first. `runBackfill` skips
-                // every type already in `completedTypes`, so calling startBackfill on a
-                // finished backfill swept zero types, latched "complete" again, and
-                // returned instantly — leaving a user whose data is actually missing
-                // with no way to retry. Resuming an unfinished run must NOT reset.
-                if syncState.backfillCompleted {
-                    BulkExportManager.shared.resetBackfill()
-                    syncState.backfillCompleted = false
-                }
-                BulkExportManager.shared.startBackfill(syncState: syncState)
-            } label: {
+            Button(action: rerunImport) {
                 HStack {
                     Image(systemName: "clock.arrow.circlepath")
                         .frame(width: 28)
-                    Text(syncState.backfillCompleted ? "Re-run Backfill" : "Run Backfill")
+                    Text(syncState.backfillCompleted ? "Re-run Import" : "Run Import")
                     Spacer()
                 }
                 .padding()
