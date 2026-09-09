@@ -32,19 +32,30 @@ struct HomeView: View {
     @ViewBuilder
     private var progressLines: some View {
         VStack(alignment: .leading, spacing: 2) {
+            // lineLimit + minimumScaleFactor on every numeric line: a seven-digit count
+            // is the normal magnitude here (the incident was 255,000; a full sweep is
+            // ~4M), and at accessibility sizes SwiftUI character-wraps a long numeric
+            // token and renders "1,284,91 / 3" — a different, wrong number. Shrink
+            // rather than fracture. Splitting into stacked Texts did not fix this.
             if let stored = syncState.backfillStoredRecords {
                 Text("\(stored.formatted()) records added")
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                 Text(checkedLine)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
             } else {
                 // The endpoint did not report what it wrote. Say only what we know.
                 Text("\(syncState.backfillSyncedRecords.formatted()) records checked")
                     .font(.subheadline.weight(.medium))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
                 if let at = syncState.backfillCurrentDate {
                     Text("now on \(at.formatted(.dateTime.month().year()))")
                         .font(.caption)
@@ -429,13 +440,19 @@ struct HomeView: View {
                             // The recovery lives here rather than in prose: the control
                             // this used to name is in a different card and is disabled
                             // while isBackfilling, so the instruction was unfollowable.
-                            Button("Cancel and Resume") {
+                            // Frame INSIDE the label. Outside, .bordered sizes its
+                            // background to the label's intrinsic size and centres it,
+                            // which rendered a 138x28pt pill in a 338pt box — below the
+                            // 44pt minimum this file's own design.md sets.
+                            Button {
                                 BulkExportManager.shared.cancelBackfill()
                                 syncState.isBackfilling = false
                                 BulkExportManager.shared.startBackfill(syncState: syncState)
+                            } label: {
+                                Text("Cancel and Resume")
+                                    .font(.caption.weight(.medium))
+                                    .frame(maxWidth: .infinity, minHeight: 44)
                             }
-                            .font(.caption.weight(.medium))
-                            .frame(maxWidth: .infinity, minHeight: 44)
                             .buttonStyle(.bordered)
                         }
                         .padding(10)
@@ -555,6 +572,10 @@ struct HomeView: View {
                 .padding()
             }
             .disabled(syncState.isSyncing || !syncState.isAuthenticated)
+            // Shown only when there is genuinely something to resume or re-run. On a
+            // never-started import the Import card already offers "Run Import", and this
+            // row rendered the identical words for the identical action 280pt away.
+            if syncState.backfillCompleted || syncState.backfillSyncedRecords > 0 {
             Divider().padding(.leading, 44)
             Button {
                 // Resuming and starting over are different actions with very different
@@ -578,11 +599,15 @@ struct HomeView: View {
                     Spacer()
                 }
                 .padding()
+                // Tint the LABEL, not the Button. An explicit .foregroundStyle on the
+                // Button overrides SwiftUI's automatic disabled dimming, which left this
+                // row rendering full-strength blue while disabled mid-import — a dead
+                // control that looks tappable, which is worse than the ambiguity it
+                // was meant to fix.
+                .foregroundStyle(syncState.backfillCompleted ? Color.red : Color.accentColor)
             }
-            // Destructive rows are red in iOS. Without it the heaviest action on the
-            // screen is visually identical to "Sync Now".
-            .foregroundStyle(syncState.backfillCompleted ? Color.red : Color.accentColor)
             .disabled(!syncState.isAuthenticated || syncState.isBackfilling)
+            }
         }
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
