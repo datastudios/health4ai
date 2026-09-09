@@ -92,6 +92,10 @@ struct HomeView: View {
     private var statusColor: Color {
         if syncState.isSyncing { return .blue }
         if syncState.syncError != nil { return .red }
+        // Metrics known to be missing outrank a healthy connection: the transport can be
+        // fine while the data is not arriving, and the headline must not read green while
+        // the app already knows core metrics returned nothing.
+        if !syncState.emptyExpectedMetricNames.isEmpty { return .orange }
         switch syncState.connectionHealth {
         case .connected:    return .green
         case .stalled:      return .orange
@@ -110,11 +114,18 @@ struct HomeView: View {
                 .font(.caption)
                 .foregroundStyle(statusColor)
         } else {
+            let missingCount = syncState.emptyExpectedMetricNames.count
+            let isPartial = missingCount > 0 && syncState.connectionHealth == .connected
             VStack(alignment: .leading, spacing: 2) {
-                Label(syncState.connectionHealth.title, systemImage: syncState.connectionHealth.systemImage)
+                Label(isPartial ? "Partial data" : syncState.connectionHealth.title,
+                      systemImage: isPartial ? "exclamationmark.circle.fill" : syncState.connectionHealth.systemImage)
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(statusColor)
-                if syncState.connectionHealth == .stalled {
+                if isPartial {
+                    Text("\(missingCount) core metric\(missingCount == 1 ? " is" : "s are") not being shared")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if syncState.connectionHealth == .stalled {
                     Text("Signed in, but no health records in the last 48 hours")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -228,29 +239,37 @@ struct HomeView: View {
                     .font(.caption)
                     .foregroundStyle(.red)
             }
+            // Prominence follows what the button actually does. Granting access is a
+            // real primary action and is styled as one; once iOS has asked, the only
+            // remaining actions are two ways to review a setting, and rendering either
+            // as a full-width tinted button reads as an unresolved error on a screen
+            // that is in fact healthy.
             VStack(spacing: 10) {
-                Button {
-                    if needsHealthPrompt {
+                if needsHealthPrompt {
+                    Button {
                         requestHealthAccess(scope: healthScope)
-                    } else {
-                        openURL(UIApplication.openSettingsURLString)
+                    } label: {
+                        Text("Grant Health Access")
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                } label: {
-                    Text(needsHealthPrompt ? "Grant Health Access" : "Manage Access in Settings")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.pink)
+                    .disabled(isRequestingHealth)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.pink)
-                .disabled(isRequestingHealth)
-                Button {
-                    // Per-type sharing lives in the Health app; fall back to Settings
-                    // if the scheme is unavailable on this device.
-                    openURL("x-apple-health://", fallback: UIApplication.openSettingsURLString)
-                } label: {
-                    Text("Open Health App")
-                        .frame(maxWidth: .infinity, minHeight: 44)
+                // Per-type sharing lives in the Health app, and openURL already falls
+                // back to iOS Settings when the scheme is declined — so a separate
+                // Settings button would duplicate a fallback the code performs, and
+                // land the user further from the toggles they came to change.
+                // Before the grant there is nothing there to manage, so it stays hidden.
+                if !needsHealthPrompt {
+                    Button {
+                        openURL("x-apple-health://", fallback: UIApplication.openSettingsURLString)
+                    } label: {
+                        Text("Open Health App")
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
             }
         }
         .padding()
@@ -346,9 +365,13 @@ struct HomeView: View {
                     .tint(.red)
                 }
             } else if syncState.backfillCompleted {
-                Label("Complete", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                    .font(.subheadline)
+                if syncState.emptyExpectedMetricNames.isEmpty {
+                    Label("Complete", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .font(.subheadline)
+                } else {
+                    emptyMetricsWarning
+                }
             } else {
                 Text("Import all historical health records from HealthKit.")
                     .font(.caption)
@@ -360,8 +383,43 @@ struct HomeView: View {
             }
         }
         .padding()
+        // Without this the "Complete" branch has no width-expanding child, so the card
+        // shrinks to its intrinsic width and centres — making this one card change
+        // width depending on which state it is in.
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// Backfill finished, but metrics that cannot legitimately be empty came back with
+    /// nothing. HealthKit never reports a denied read, so this is the only place the
+    /// app can tell the user their data is missing instead of showing a green check.
+    private var emptyMetricsWarning: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Imported, but \(syncState.emptyExpectedMetricNames.count) metric\(syncState.emptyExpectedMetricNames.count == 1 ? "" : "s") returned no data",
+                  systemImage: "exclamationmark.triangle.fill")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.orange)
+            Text(syncState.emptyExpectedMetricNames.formatted(.list(type: .and)))
+                .font(.caption.weight(.medium))
+            // Deliberately does not name a Health-app navigation path: Apple moves it
+            // between releases, and a wrong path is worse than none.
+            Text("These are almost certainly turned off for health4ai in the Health app. Turn them back on, then re-run the import.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            // The copy asks the user to run the backfill again, so the retry belongs
+            // here rather than unlabelled in a separate card further down the screen.
+            Button {
+                BulkExportManager.shared.resetBackfill()
+                syncState.backfillCompleted = false
+                BulkExportManager.shared.startBackfill(syncState: syncState)
+            } label: {
+                Text("Re-run Import")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!syncState.isAuthenticated || syncState.isBackfilling)
+        }
     }
 
     // MARK: - Actions card
@@ -385,6 +443,15 @@ struct HomeView: View {
             .disabled(syncState.isSyncing || !syncState.isAuthenticated)
             Divider().padding(.leading, 44)
             Button {
+                // A re-run has to clear per-type completion first. `runBackfill` skips
+                // every type already in `completedTypes`, so calling startBackfill on a
+                // finished backfill swept zero types, latched "complete" again, and
+                // returned instantly — leaving a user whose data is actually missing
+                // with no way to retry. Resuming an unfinished run must NOT reset.
+                if syncState.backfillCompleted {
+                    BulkExportManager.shared.resetBackfill()
+                    syncState.backfillCompleted = false
+                }
                 BulkExportManager.shared.startBackfill(syncState: syncState)
             } label: {
                 HStack {

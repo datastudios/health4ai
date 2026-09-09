@@ -88,6 +88,10 @@ final class SyncState: ObservableObject {
     @Published var backfillError: String? = nil
     @Published var backfillEarliestDate: Date? = nil
     @Published var backfillLatestDate: Date? = nil
+    /// Human-readable names of always-expected metrics whose last full sweep returned
+    /// nothing — the only detectable symptom of a denied per-type Health permission.
+    /// See `BulkExportManager.alwaysExpectedIdentifiers`.
+    @Published var emptyExpectedMetricNames: [String] = []
 
     // MARK: - Connection configuration
 

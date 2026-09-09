@@ -19,6 +19,47 @@ final class BulkExportManager {
     private static let backfillInProgressKey = "hkb.backfill.inProgress"
     // Per-type chunk checkpoint: saves the last completed chunkEnd so restarts resume mid-type
     private static let chunkCheckpointPrefix = "hkb.backfill.chunk."
+    // Types that finished a full 2013→now sweep having returned zero samples
+    private static let emptyHighVolumeTypesKey = "hkb.backfill.emptyHighVolumeTypes"
+
+    /// Types that any iPhone-carrying user necessarily has years of data for.
+    ///
+    /// HealthKit deliberately does not expose read authorization (see
+    /// `HealthKitManager.needsAuthorizationRequest`): a denied read type returns an
+    /// EMPTY sample array, indistinguishable from a window with genuinely no data.
+    /// So a completed all-time sweep of one of these that yields zero samples is not
+    /// "no data" — it is a revoked or never-granted per-type toggle in the Health app,
+    /// and it is the only signal the app can ever get about that state.
+    /// Restricted to types where zero is impossible, so an ordinary user who simply
+    /// does not record swimming or handwashing is never warned.
+    static let alwaysExpectedIdentifiers: Set<String> = [
+        HKQuantityTypeIdentifier.stepCount.rawValue,
+        HKQuantityTypeIdentifier.heartRate.rawValue,
+        HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+        HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
+    ]
+
+    /// Health-app-facing name for an always-expected identifier, so the warning names
+    /// the toggle the user has to find rather than an HK type string.
+    static func displayName(for identifier: String) -> String {
+        switch identifier {
+        case HKQuantityTypeIdentifier.stepCount.rawValue:               return "Steps"
+        case HKQuantityTypeIdentifier.heartRate.rawValue:               return "Heart Rate"
+        case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:  return "Walking + Running Distance"
+        case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:      return "Active Energy"
+        default:                                                        return identifier
+        }
+    }
+
+    /// Subset of `alwaysExpectedIdentifiers` whose last full sweep returned nothing.
+    private(set) var emptyHighVolumeTypes: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: Self.emptyHighVolumeTypesKey) ?? [])
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: Self.emptyHighVolumeTypesKey)
+        }
+    }
 
     // UIKit background task token — keeps the app alive ~30s after going to background
     private var bgTaskID: UIBackgroundTaskIdentifier = .invalid
@@ -108,6 +149,19 @@ final class BulkExportManager {
                 completedTypes = completed
                 typesCompleted += 1
 
+                // A full sweep of a type that cannot legitimately be empty, returning
+                // nothing, is the app's only observable symptom of a denied read
+                // permission. Record it rather than latching a silent "complete".
+                if Self.alwaysExpectedIdentifiers.contains(sampleType.identifier) {
+                    var empties = emptyHighVolumeTypes
+                    if count == 0 {
+                        empties.insert(sampleType.identifier)
+                    } else {
+                        empties.remove(sampleType.identifier)
+                    }
+                    emptyHighVolumeTypes = empties
+                }
+
                 print("[BulkExport] \(sampleType.identifier): \(count) records (\(typesCompleted)/\(totalTypes) types)")
 
             } catch is CancellationError {
@@ -123,6 +177,9 @@ final class BulkExportManager {
                 }
             }
         }
+
+        let emptyNames = emptyHighVolumeTypes.map(Self.displayName(for:)).sorted()
+        await MainActor.run { syncState.emptyExpectedMetricNames = emptyNames }
 
         if !Task.isCancelled {
             if typesCompleted == totalTypes {
@@ -286,6 +343,13 @@ final class BulkExportManager {
             await MainActor.run { syncState.backfillCompleted = false }
             print("[BulkExport] Migration: reset stuck high-volume types for retry.")
         }
+    }
+
+    /// Republishes the stored empty-type warning at launch, so the state survives a
+    /// restart instead of only appearing in the run that first detected it.
+    func publishEmptyExpectedTypes(syncState: SyncState) async {
+        let names = emptyHighVolumeTypes.map(Self.displayName(for:)).sorted()
+        await MainActor.run { syncState.emptyExpectedMetricNames = names }
     }
 
     // MARK: - Reset backfill state (for re-running)
