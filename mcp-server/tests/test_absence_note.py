@@ -192,3 +192,40 @@ def test_get_metric_stats_attaches_status_when_empty(monkeypatch):
         tools.current_user_id.reset(token)
     assert out["data_points"] == 0
     assert out["data_status"]["status"] == "never_recorded"
+
+
+# --- the BYOB schema split ----------------------------------------------------
+
+def test_summary_date_column_detects_the_bootstrap_name(monkeypatch):
+    """A self-hosting user's schema calls this column summary_date; the author's
+    legacy project calls it date. Hardcoding either breaks half the userbase, and it
+    broke silently — every summary-backed tool raised `column "date" does not exist`
+    for anyone who followed the documented install."""
+    class FakeCursor:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params): self.sql = sql
+        def fetchone(self): return ("summary_date",)
+    class FakeConn:
+        def cursor(self): return FakeCursor()
+        def close(self): pass
+    monkeypatch.setattr(tools, "_connect", lambda: FakeConn())
+    monkeypatch.setattr(tools, "_summary_date_col", None)
+    assert tools.summary_date_column() == "summary_date"
+    # and rows come back keyed on `date` regardless, so callers stay unchanged
+    rows = tools._normalise_summary_rows([{"summary_date": "2026-01-01", "avg_value": 1}])
+    assert rows[0]["date"] == "2026-01-01"
+
+
+def test_summary_date_column_falls_back_to_date(monkeypatch):
+    class FakeCursor:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params): pass
+        def fetchone(self): return None
+    class FakeConn:
+        def cursor(self): return FakeCursor()
+        def close(self): pass
+    monkeypatch.setattr(tools, "_connect", lambda: FakeConn())
+    monkeypatch.setattr(tools, "_summary_date_col", None)
+    assert tools.summary_date_column() == "date"

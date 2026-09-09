@@ -80,6 +80,54 @@ def _connect():
     )
 
 
+_summary_date_col: str | None = None
+
+
+def summary_date_column() -> str:
+    """Which date column this deployment's summaries table actually uses.
+
+    health4ai is bring-your-own-backend, and the two schemas in the wild disagree:
+      - supabase/bootstrap/001+002 (what a NEW self-hosting user runs) deliberately
+        standardised on `summary_date`, and the summarize function writes it
+      - the author's legacy project has `date`, because migration 009's
+        CREATE TABLE IF NOT EXISTS silently no-opped against a pre-existing table
+    This server queried `date` unconditionally, so every summary-backed tool — the
+    >30-day branch of query_metric, get_long_term_trend, get_metric_stats,
+    get_health_summary, compare_periods and more — raised `column "date" does not
+    exist` for every user who followed the documented install. Detect instead of
+    assuming; picking either name outright breaks the other half of the userbase.
+
+    Resolved once and cached. The result is a fixed identifier from a two-element
+    allowlist, never caller input, so interpolating it into SQL is safe.
+    """
+    global _summary_date_col
+    if _summary_date_col is None:
+        conn = _connect()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s AND column_name IN ('summary_date', 'date') "
+                    "ORDER BY column_name = 'summary_date' DESC LIMIT 1",
+                    (SUMMARY_TABLE,),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        _summary_date_col = row[0] if row else "date"
+    return _summary_date_col
+
+
+def _normalise_summary_rows(rows: list[dict]) -> list[dict]:
+    """Expose the date column as `date` regardless of what it is called on disk,
+    so every caller downstream keeps reading one key."""
+    col = summary_date_column()
+    if col != "date":
+        for r in rows:
+            r["date"] = r.get(col)
+    return rows
+
+
 def _clamp_days(days: int) -> int:
     """Clamp a day-window parameter to [1, MAX_DAYS]. Non-positive → 1."""
     try:
@@ -229,6 +277,7 @@ def _fetch_metrics_snapshot(user_id: str, day_start: str, day_end: str,
 def _fetch_summaries(metric_type: str, user_id: str,
                      since_date: str, limit: int = 500) -> list[dict]:
     """Query daily summaries table for historical data."""
+    col = summary_date_column()
     conn = _connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -237,13 +286,13 @@ def _fetch_summaries(metric_type: str, user_id: str,
                 SELECT * FROM {SUMMARY_TABLE}
                 WHERE user_id = %s
                   AND metric_type = %s
-                  AND date >= %s
-                ORDER BY date DESC
+                  AND {col} >= %s
+                ORDER BY {col} DESC
                 LIMIT %s
                 """,
                 (user_id, metric_type, since_date, limit),
             )
-            return [dict(r) for r in cur.fetchall()]
+            return _normalise_summary_rows([dict(r) for r in cur.fetchall()])
     finally:
         conn.close()
 
@@ -251,6 +300,7 @@ def _fetch_summaries(metric_type: str, user_id: str,
 def _fetch_summaries_range(metric_type: str, user_id: str,
                            start_date: str, end_date: str) -> list[dict]:
     """Daily summaries in [start_date, end_date]."""
+    col = summary_date_column()
     conn = _connect()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -259,14 +309,14 @@ def _fetch_summaries_range(metric_type: str, user_id: str,
                 SELECT * FROM {SUMMARY_TABLE}
                 WHERE user_id = %s
                   AND metric_type = %s
-                  AND date >= %s
-                  AND date <= %s
-                ORDER BY date ASC
+                  AND {col} >= %s
+                  AND {col} <= %s
+                ORDER BY {col} ASC
                 LIMIT 10000
                 """,
                 (user_id, metric_type, start_date, end_date),
             )
-            return [dict(r) for r in cur.fetchall()]
+            return _normalise_summary_rows([dict(r) for r in cur.fetchall()])
     finally:
         conn.close()
 
@@ -520,12 +570,18 @@ def get_health_summary(days: int = 7) -> dict:
         if r.get("metadata", {}) and "sleep" in str(r.get("metadata", {})).lower()
     ]
 
+    # Steps is the headline figure an assistant quotes first, and it is one of the
+    # metrics that can be silently unshared. A bare zero here becomes "you were
+    # inactive" in the answer the user actually reads.
+    steps_note = _absence_note(STEPS, uid, steps_days_with_data)
+
     return {
         "period_days": days,
         "steps": {
             "total": steps_total,
             "daily_avg": steps_daily_avg,
             "days_with_data": steps_days_with_data,
+            **({"data_status": steps_note} if steps_note else {}),
         },
         "hrv_sdnn_ms": {
             "avg": hrv_avg,
@@ -1417,6 +1473,13 @@ def compare_periods(
         direction = "higher" if delta > 0 else "lower" if delta < 0 else "the same"
         verdict = f"{label_b} is {direction} than {label_a}"
 
+    # A period with no data is not a period of zero. Comparing an unshared or
+    # not-yet-imported window against a populated one manufactures a dramatic
+    # decline and states it as a verdict, which is worse than saying nothing.
+    empty_note = None
+    if a["avg"] is None or b["avg"] is None:
+        empty_note = _absence_note(metric_type, uid, 0)
+
     return {
         "metric_type": metric_type,
         "value_type": "daily_total" if is_cumulative else "daily_avg",
@@ -1427,4 +1490,5 @@ def compare_periods(
             "pct_change": pct_change,
             "verdict": verdict,
         },
+        **({"data_status": empty_note} if empty_note else {}),
     }
