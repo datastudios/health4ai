@@ -34,6 +34,15 @@ and increased-contrast for free.
 2. **`.pink` on `.borderedProminent` with white text is 3.52:1 and fails AA.** It is
    tolerated on the single genuine primary action per screen and nowhere else. Do not
    spread it, and do not use it for a secondary action to "keep things on brand".
+3. **Tint a button. Never foreground-style one.** An explicit `.foregroundStyle`
+   *anywhere* in a `Button`'s label subtree overrides SwiftUI's automatic disabled
+   dimming, and the control then renders live while dead. Measured 2026-09-09: a
+   `.disabled` row at `rgb(0,136,255)`, pixel-identical to the enabled row above it,
+   against `rgb(197,197,199)` once switched to `.tint`. Moving the modifier from the
+   Button onto its label does *not* help — the dimming is applied to that content.
+   `.tint` composes; `.foregroundStyle` overrides. Prefer `.tint` over an explicit
+   conditional colour too: a colour keyed off the same predicate as `.disabled(...)`
+   is two sources asserting one fact, and they drift.
 
 ## Status colour is a single signal
 
