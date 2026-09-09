@@ -21,6 +21,60 @@ struct HomeView: View {
 
     static let stallMinutes = 5
 
+    /// Two claims, trustworthy one first.
+    ///
+    /// "Added" is what the server's `inserted` actually means. "Checked" honestly covers
+    /// both "stored it" and "already had it", so a healthy re-sweep reads as nothing new
+    /// here yet rather than as nothing is working — leading with the number we just
+    /// declared worthless would trade a false green for a false red.
+    /// Two stacked Texts rather than one concatenated string: at accessibility sizes a
+    /// single line broke mid-number and rendered a different, wrong figure.
+    @ViewBuilder
+    private var progressLines: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if let stored = syncState.backfillStoredRecords {
+                Text("\(stored.formatted()) records added")
+                    .font(.subheadline.weight(.medium))
+                    .monospacedDigit()
+                Text(checkedLine)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            } else {
+                // The endpoint did not report what it wrote. Say only what we know.
+                Text("\(syncState.backfillSyncedRecords.formatted()) records checked")
+                    .font(.subheadline.weight(.medium))
+                    .monospacedDigit()
+                if let at = syncState.backfillCurrentDate {
+                    Text("now on \(at.formatted(.dateTime.month().year()))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityProgressLabel)
+    }
+
+    private var checkedLine: String {
+        let checked = "\(syncState.backfillSyncedRecords.formatted()) checked"
+        guard let at = syncState.backfillCurrentDate else { return checked }
+        return checked + " · now on \(at.formatted(.dateTime.month().year()))"
+    }
+
+    private var importActionLabel: String {
+        if syncState.backfillCompleted { return "Import Again from Scratch" }
+        return syncState.backfillSyncedRecords > 0 ? "Resume Import" : "Run Import"
+    }
+
+    private var accessibilityProgressLabel: String {
+        let checked = syncState.backfillSyncedRecords.formatted()
+        guard let stored = syncState.backfillStoredRecords else {
+            return "\(checked) records checked"
+        }
+        return "\(stored.formatted()) records added, \(checked) checked"
+    }
+
     /// Backfilling, but nothing has posted for a while. Reads backfillLastBatchAt rather
     /// than the record count, because a re-sweep legitimately stores zero new rows while
     /// still doing work — counting rows would cry stall on a healthy import.
@@ -349,35 +403,45 @@ struct HomeView: View {
             if syncState.isBackfilling {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
-                        ProgressView().scaleEffect(0.85)
+                        // A spinner next to "nothing has moved" asserts activity and no
+                        // activity at once, and the spinner is the stronger signal — it is
+                        // exactly what made a wedged import look like work.
+                        if isImportStalled {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                                .frame(width: 20)
+                        } else {
+                            ProgressView().scaleEffect(0.85)
+                        }
                         if syncState.backfillSyncedRecords == 0 {
                             Text("Scanning HealthKit…")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         } else {
-                            VStack(alignment: .leading, spacing: 2) {
-                                // "sent" not "synced". The endpoint upserts, so a sample
-                                // that is already stored is sent successfully and adds
-                                // nothing — the two numbers are not the same claim.
-                                Text("\(syncState.backfillSyncedRecords.formatted()) sent · "
-                                     + "\(syncState.backfillStoredRecords.formatted()) new")
-                                    .font(.subheadline.weight(.medium))
-                                    .monospacedDigit()
-                                if let at = syncState.backfillLatestDate {
-                                    Text("now importing \(at.formatted(.dateTime.month().year()))")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
+                            progressLines
                         }
                         Spacer()
                     }
                     if isImportStalled {
-                        Label("No data has moved in over \(Self.stallMinutes) minutes. "
-                              + "Cancel and start it again to resume where it stopped.",
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Nothing has moved in \(Self.stallMinutes) minutes.")
+                                .font(.caption)
+                            // The recovery lives here rather than in prose: the control
+                            // this used to name is in a different card and is disabled
+                            // while isBackfilling, so the instruction was unfollowable.
+                            Button("Cancel and Resume") {
+                                BulkExportManager.shared.cancelBackfill()
+                                syncState.isBackfilling = false
+                                BulkExportManager.shared.startBackfill(syncState: syncState)
+                            }
+                            .font(.caption.weight(.medium))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.orange.opacity(0.12),
+                                    in: RoundedRectangle(cornerRadius: 10))
                     }
                     Button(role: .destructive) {
                         BulkExportManager.shared.cancelBackfill()
@@ -421,10 +485,17 @@ struct HomeView: View {
     /// app can tell the user their data is missing instead of showing a green check.
     private var emptyMetricsWarning: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Imported, but \(syncState.emptyExpectedMetricNames.count) metric\(syncState.emptyExpectedMetricNames.count == 1 ? "" : "s") returned no data",
-                  systemImage: "exclamationmark.triangle.fill")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.orange)
+            // Orange on the symbol only. Measured, orange caption text on the card
+            // background is 2.31:1 in light mode — below even the 3:1 large-text bar,
+            // which made the least legible text on the card the only warning on it.
+            Label {
+                Text("Imported, but \(syncState.emptyExpectedMetricNames.count) metric\(syncState.emptyExpectedMetricNames.count == 1 ? "" : "s") returned no data")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            .font(.subheadline.weight(.medium))
             Text(syncState.emptyExpectedMetricNames.formatted(.list(type: .and)))
                 .font(.caption.weight(.medium))
             // Deliberately does not name a Health-app navigation path: Apple moves it
@@ -437,8 +508,11 @@ struct HomeView: View {
             // Re-arms ONLY the metrics named above. Everything else keeps its progress,
             // so fixing a permission costs one short sweep rather than a full re-import.
             Button {
+                // The SUBSET the card just named, not all four always-expected types.
+                // The label promises "these metrics"; re-importing the other three would
+                // make the label a lie and cost three unnecessary full sweeps.
                 BulkExportManager.shared.resetTypes(
-                    BulkExportManager.alwaysExpectedIdentifiers, syncState: syncState)
+                    BulkExportManager.shared.emptyHighVolumeTypes, syncState: syncState)
                 BulkExportManager.shared.startBackfill(syncState: syncState)
             } label: {
                 Text("Retry These Metrics")
@@ -497,11 +571,17 @@ struct HomeView: View {
                 HStack {
                     Image(systemName: "clock.arrow.circlepath")
                         .frame(width: 28)
-                    Text(syncState.backfillCompleted ? "Import Again from Scratch" : "Resume Import")
+                    // Three cases, not two. An import that has never run has nothing to
+                    // resume, and calling it "Resume" duplicated the Import card's own
+                    // "Run Import" with a different word for the identical action.
+                    Text(importActionLabel)
                     Spacer()
                 }
                 .padding()
             }
+            // Destructive rows are red in iOS. Without it the heaviest action on the
+            // screen is visually identical to "Sync Now".
+            .foregroundStyle(syncState.backfillCompleted ? Color.red : Color.accentColor)
             .disabled(!syncState.isAuthenticated || syncState.isBackfilling)
         }
         .background(Color(.secondarySystemGroupedBackground))
@@ -511,9 +591,8 @@ struct HomeView: View {
             Button("Import Again from Scratch", role: .destructive) { rerunImport() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This discards where the last import got to and re-sends your full history "
-                 + "from 2013. It can take hours. Records already saved are not duplicated, "
-                 + "but nothing new is added for the parts already imported.")
+            Text("This discards where the last import got to and re-sends your full "
+                 + "history from 2013. It can take hours.")
         }
     }
 }
