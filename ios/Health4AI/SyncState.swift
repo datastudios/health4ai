@@ -88,6 +88,13 @@ final class SyncState: ObservableObject {
     @Published var backfillError: String? = nil
     @Published var backfillEarliestDate: Date? = nil
     @Published var backfillLatestDate: Date? = nil
+    /// Rows the SERVER reported writing. The ingest upserts, so a re-sweep posts
+    /// hundreds of thousands of samples and stores none of them; only this number is
+    /// evidence the import is adding anything.
+    @Published var backfillStoredRecords: Int = 0
+    /// When the last batch completed. A backfill that stops posting shows a live
+    /// progress card and a frozen number forever, which is indistinguishable from work.
+    @Published var backfillLastBatchAt: Date? = nil
     /// Human-readable names of always-expected metrics whose last full sweep returned
     /// nothing — the only detectable symptom of a denied per-type Health permission.
     /// See `BulkExportManager.alwaysExpectedIdentifiers`.
@@ -181,12 +188,19 @@ final class SyncState: ObservableObject {
         syncError = message
     }
 
-    func recordBackfillProgress(synced: Int, total: Int, earliest: Date?, latest: Date?) {
-        let delta = synced - backfillSyncedRecords
-        backfillSyncedRecords = synced
+    func recordBackfillProgress(posted: Int, stored: Int?, total: Int,
+                                earliest: Date?, latest: Date?) {
+        let delta = posted - backfillSyncedRecords
+        backfillSyncedRecords = posted
         backfillTotalRecords = total
-        if let e = earliest { backfillEarliestDate = e }
-        if let l = latest   { backfillLatestDate = l }
+        if let s = stored { backfillStoredRecords = s }
+        // Earliest keeps the MINIMUM so "back to <date>" stays true as the sweep advances;
+        // latest keeps the MAXIMUM and is the honest progress position.
+        if let e = earliest { backfillEarliestDate = min(e, backfillEarliestDate ?? e) }
+        if let l = latest   { backfillLatestDate = max(l, backfillLatestDate ?? l) }
+        // Any batch at all is proof of life. The stall check reads this and nothing else,
+        // so it stays true even while a re-sweep is storing zero new rows.
+        backfillLastBatchAt = Date()
         if delta > 0 { lifetimeSyncedRecords += delta }
         UserDefaults.standard.set(backfillSyncedRecords, forKey: Keys.backfillProgress)
     }
@@ -222,6 +236,8 @@ final class SyncState: ObservableObject {
         backfillTotalRecords = 0
         backfillEarliestDate = nil
         backfillLatestDate = nil
+        backfillStoredRecords = 0
+        backfillLastBatchAt = nil
         lifetimeSyncedRecords = 0
         isAuthenticated = false
         userEmail = nil

@@ -239,11 +239,31 @@ final class SyncEngine {
 
     /// Posts a batch of HealthSamples to the configured endpoint.
     /// Retries up to 3 times with exponential backoff (1s, 2s, 4s).
+    /// Reads `{"inserted": N}` from an ingest response. Returns nil when the field is
+    /// absent or not a number, so an older or third-party endpoint degrades to "unknown"
+    /// rather than to a fabricated success count.
+    static func parseInsertedCount(_ data: Data) -> Int? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        if let n = obj["inserted"] as? Int { return n }
+        if let d = obj["inserted"] as? Double { return Int(d) }
+        return nil
+    }
+
+    /// - Returns: the count the SERVER reports having written, or nil if it did not say.
+    ///
+    /// The endpoint upserts on (user_id, metric_type, started_at), so a batch that posts
+    /// successfully may store nothing at all — every sample already present. Treating
+    /// "the POST returned 2xx" as "N records synced" is how the import came to report
+    /// 255,000 records while the table gained zero rows. nil means unknown, and unknown
+    /// must never be rendered as the batch size.
+    @discardableResult
     func postSamples(
         _ samples: [HealthSample],
         token: String,
         serverURL: String
-    ) async throws {
+    ) async throws -> Int? {
         guard let url = URL(string: serverURL) else {
             throw SyncError.invalidURL
         }
@@ -275,14 +295,14 @@ final class SyncEngine {
             request.timeoutInterval = 60
 
             do {
-                let (_, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await URLSession.shared.data(for: request)
                 guard let httpResponse = response as? HTTPURLResponse else {
                     throw SyncError.invalidResponse
                 }
 
                 switch httpResponse.statusCode {
                 case 200...299:
-                    return // success
+                    return Self.parseInsertedCount(data)
                 case 401:
                     throw SyncError.unauthorized
                 case 429, 503:

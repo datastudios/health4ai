@@ -14,6 +14,20 @@ struct HomeView: View {
     /// Set while programmatically restoring the picker after a failed request, so the
     /// restore does not re-enter onChange and fire a second request.
     @State private var isRevertingScope = false
+    /// Drives the stall check. A computed property alone never re-evaluates, so a wedged
+    /// import would keep showing a live progress card forever.
+    @State private var tick = Date()
+    @State private var confirmStartOver = false
+
+    static let stallMinutes = 5
+
+    /// Backfilling, but nothing has posted for a while. Reads backfillLastBatchAt rather
+    /// than the record count, because a re-sweep legitimately stores zero new rows while
+    /// still doing work — counting rows would cry stall on a healthy import.
+    private var isImportStalled: Bool {
+        guard syncState.isBackfilling, let last = syncState.backfillLastBatchAt else { return false }
+        return tick.timeIntervalSince(last) > Double(Self.stallMinutes) * 60
+    }
 
     var body: some View {
         NavigationStack {
@@ -36,6 +50,7 @@ struct HomeView: View {
                     .environmentObject(syncState)
             }
             .task { await refreshHealthPromptState() }
+            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { tick = $0 }
             .onChange(of: scenePhase) { _, phase in
                 // Coming back from Settings or the Health app can change access.
                 if phase == .active {
@@ -341,16 +356,28 @@ struct HomeView: View {
                                 .foregroundStyle(.secondary)
                         } else {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("\(syncState.backfillSyncedRecords.formatted()) records synced")
+                                // "sent" not "synced". The endpoint upserts, so a sample
+                                // that is already stored is sent successfully and adds
+                                // nothing — the two numbers are not the same claim.
+                                Text("\(syncState.backfillSyncedRecords.formatted()) sent · "
+                                     + "\(syncState.backfillStoredRecords.formatted()) new")
                                     .font(.subheadline.weight(.medium))
-                                if let date = syncState.backfillEarliestDate {
-                                    Text("back to \(date.formatted(.dateTime.month().year()))")
+                                    .monospacedDigit()
+                                if let at = syncState.backfillLatestDate {
+                                    Text("now importing \(at.formatted(.dateTime.month().year()))")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
                             }
                         }
                         Spacer()
+                    }
+                    if isImportStalled {
+                        Label("No data has moved in over \(Self.stallMinutes) minutes. "
+                              + "Cancel and start it again to resume where it stopped.",
+                              systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                     Button(role: .destructive) {
                         BulkExportManager.shared.cancelBackfill()
@@ -407,8 +434,14 @@ struct HomeView: View {
                 .foregroundStyle(.secondary)
             // The copy asks the user to run the backfill again, so the retry belongs
             // here rather than unlabelled in a separate card further down the screen.
-            Button(action: rerunImport) {
-                Text("Re-run Import")
+            // Re-arms ONLY the metrics named above. Everything else keeps its progress,
+            // so fixing a permission costs one short sweep rather than a full re-import.
+            Button {
+                BulkExportManager.shared.resetTypes(
+                    BulkExportManager.alwaysExpectedIdentifiers, syncState: syncState)
+                BulkExportManager.shared.startBackfill(syncState: syncState)
+            } label: {
+                Text("Retry These Metrics")
                     .frame(maxWidth: .infinity, minHeight: 44)
             }
             .buttonStyle(.bordered)
@@ -449,11 +482,22 @@ struct HomeView: View {
             }
             .disabled(syncState.isSyncing || !syncState.isAuthenticated)
             Divider().padding(.leading, 44)
-            Button(action: rerunImport) {
+            Button {
+                // Resuming and starting over are different actions with very different
+                // costs, so they are no longer the same button. An unfinished import
+                // resumes from its per-type checkpoints; only a FINISHED one offers to
+                // start over, and that asks first, because it discards every checkpoint
+                // and re-sends the entire history from 2013.
+                if syncState.backfillCompleted {
+                    confirmStartOver = true
+                } else {
+                    BulkExportManager.shared.startBackfill(syncState: syncState)
+                }
+            } label: {
                 HStack {
                     Image(systemName: "clock.arrow.circlepath")
                         .frame(width: 28)
-                    Text(syncState.backfillCompleted ? "Re-run Import" : "Run Import")
+                    Text(syncState.backfillCompleted ? "Import Again from Scratch" : "Resume Import")
                     Spacer()
                 }
                 .padding()
@@ -462,6 +506,15 @@ struct HomeView: View {
         }
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .confirmationDialog("Import everything again?",
+                            isPresented: $confirmStartOver, titleVisibility: .visible) {
+            Button("Import Again from Scratch", role: .destructive) { rerunImport() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This discards where the last import got to and re-sends your full history "
+                 + "from 2013. It can take hours. Records already saved are not duplicated, "
+                 + "but nothing new is added for the parts already imported.")
+        }
     }
 }
 

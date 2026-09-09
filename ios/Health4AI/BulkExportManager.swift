@@ -116,8 +116,11 @@ final class BulkExportManager {
         let allTypes = HealthKitManager.sampleTypes()
         let remainingTypes = allTypes.filter { !completedTypes.contains($0.identifier) }
 
-        // Estimate total by querying counts (fast path: just run the sync and count)
-        var totalSynced = 0
+        // posted = samples handed to the server; stored = rows the server says it wrote.
+        // They diverge sharply on a re-sweep, because the endpoint upserts and most of a
+        // repeated range already exists. Only `stored` is evidence anything was added.
+        var totalPosted = 0
+        var totalStored = 0
         let totalTypes = remainingTypes.count
         var typesCompleted = 0
 
@@ -130,12 +133,14 @@ final class BulkExportManager {
                 let count = try await backfillType(
                     sampleType: sampleType,
                     serverURL: serverURL,
-                    onBatch: { batchCount, earliestDate, latestDate in
-                        totalSynced += batchCount
+                    onBatch: { batchPosted, batchStored, earliestDate, latestDate in
+                        totalPosted += batchPosted
+                        if let s = batchStored { totalStored += s }
                         Task { @MainActor in
                             syncState.recordBackfillProgress(
-                                synced: totalSynced,
-                                total: max(totalSynced, syncState.backfillTotalRecords),
+                                posted: totalPosted,
+                                stored: batchStored == nil ? nil : totalStored,
+                                total: max(totalPosted, syncState.backfillTotalRecords),
                                 earliest: earliestDate,
                                 latest: latestDate
                             )
@@ -188,7 +193,7 @@ final class BulkExportManager {
                 await MainActor.run {
                     syncState.recordBackfillComplete()
                 }
-                print("[BulkExport] Backfill complete. Total records: \(totalSynced)")
+                print("[BulkExport] Backfill complete. Posted \(totalPosted), server stored \(totalStored).")
             } else {
                 // At least one type errored. Do NOT set the global backfillCompleted latch —
                 // that flag gates whether startBackfill() ever runs again (see backfillNeeded),
@@ -214,7 +219,7 @@ final class BulkExportManager {
     private func backfillType(
         sampleType: HKSampleType,
         serverURL: String,
-        onBatch: @escaping (_ count: Int, _ earliest: Date?, _ latest: Date?) -> Void
+        onBatch: @escaping (_ posted: Int, _ stored: Int?, _ earliest: Date?, _ latest: Date?) -> Void
     ) async throws -> Int {
         let token: String
         do {
@@ -266,8 +271,13 @@ final class BulkExportManager {
 
                     for batch in batches {
                         if Task.isCancelled { break }
-                        try await syncEngine.postSamples(batch, token: token, serverURL: serverURL)
-                        onBatch(batch.count, nil, nil)
+                        let stored = try await syncEngine.postSamples(
+                            batch, token: token, serverURL: serverURL)
+                        // Dates come from the batch, not from nil. Passing nil here meant
+                        // backfillEarliestDate was never set by anything, which left the
+                        // "back to <date>" progress line permanently unrendered.
+                        let starts = batch.map(\.startedAt)
+                        onBatch(batch.count, stored, starts.min(), starts.max())
                         totalCount += batch.count
                     }
                 }
@@ -350,6 +360,30 @@ final class BulkExportManager {
     func publishEmptyExpectedTypes(syncState: SyncState) async {
         let names = emptyHighVolumeTypes.map(Self.displayName(for:)).sorted()
         await MainActor.run { syncState.emptyExpectedMetricNames = names }
+    }
+
+    /// Re-arm ONLY these types, leaving every other type's progress intact.
+    ///
+    /// The full resetBackfill() is almost never what a user wants after fixing a
+    /// permission: the four affected types need re-fetching, the other ~120 do not, and
+    /// a blanket reset re-sends the entire history from 2013 — millions of samples the
+    /// server already holds and will simply upsert over. Measured on a real account: a
+    /// blanket reset spent hours re-posting ~4M rows without adding one.
+    @MainActor
+    func resetTypes(_ identifiers: Set<String>, syncState: SyncState) {
+        guard !identifiers.isEmpty else { return }
+        var completed = completedTypes
+        completed.subtract(identifiers)
+        completedTypes = completed
+        let defaults = UserDefaults.standard
+        for identifier in identifiers {
+            defaults.removeObject(forKey: Self.chunkCheckpointPrefix + identifier)
+        }
+        var empties = emptyHighVolumeTypes
+        empties.subtract(identifiers)
+        emptyHighVolumeTypes = empties
+        // Un-latch so backfillNeeded fires and startBackfill actually runs again.
+        syncState.backfillCompleted = false
     }
 
     // MARK: - Reset backfill state (for re-running)
