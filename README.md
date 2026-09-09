@@ -174,6 +174,26 @@ Your health data and the model both stay on your hardware — nothing leaves you
 | `get_metric_stats` | Personal baseline: min/max/mean/percentiles |
 | `compare_periods` | Compare a metric between two date ranges |
 
+### If a metric is empty, read `data_status` before believing it
+
+**iOS never tells an app that a Health permission was denied.** A type you have not
+shared returns an *empty result*, byte-for-byte identical to a day where you genuinely
+did nothing. Nothing in HealthKit's API can distinguish the two, so an assistant reading
+a bare `0` will confidently tell you that you took no steps.
+
+Tools that can return an empty result therefore attach a `data_status` block:
+
+- `never_recorded` — this metric has **never** produced a sample for you. For steps,
+  heart rate, active energy or walking distance that is not possible if the data were
+  being shared, so it almost certainly is not. Open **Health → Sharing → Apps →
+  health4ai**, switch the metric on, then re-run the import from the app's Home tab.
+- `empty_window` — nothing in the window you asked about, but the metric has data at
+  other times. A real gap, not a permission problem.
+
+This is not hypothetical. On the author's own account, step count, heart rate, active
+energy and walking distance were silently unshared for nearly three months while every
+other metric synced normally, and the app displayed a green "Complete" throughout.
+
 ---
 
 ## Architecture

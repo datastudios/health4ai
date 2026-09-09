@@ -335,6 +335,27 @@ def _daily_total_avg(points: list[dict]) -> float | None:
 
 
 # Metrics where the meaningful number is the daily total (not mean of intervals)
+DISTANCE_WALKING = "HKQuantityTypeIdentifierDistanceWalkingRunning"
+
+# Metrics an iPhone-carrying user necessarily accumulates. Zero rows ALL-TIME for one
+# of these is not "you did nothing" -- it means the type was never shared with the app.
+#
+# HealthKit deliberately never reports a denied READ: a denied type returns an empty
+# result identical to a genuinely empty window, so neither the iOS app nor this server
+# can ask whether permission exists. The only observable signal is a metric that cannot
+# be empty being empty. Without this, an assistant reading a zero confidently tells the
+# user they took no steps, which is both wrong and unfalsifiable.
+#
+# Found the hard way: four of these were silently denied on the author's own account
+# from 2026-06-17 to 2026-09-09 while every other type synced normally, and the iOS app
+# reported a green "Complete" the whole time.
+_ALWAYS_EXPECTED_METRICS = {
+    STEPS,
+    HEART_RATE,
+    ACTIVE_ENERGY,
+    DISTANCE_WALKING,
+}
+
 _CUMULATIVE_METRICS = {
     STEPS,
     ACTIVE_ENERGY,
@@ -620,6 +641,71 @@ def get_hrv_trend(days: int = 30) -> dict:
     }
 
 
+def _has_any_rows_alltime(metric_type: str, user_id: str) -> bool:
+    """Has this user EVER had a row of this type, in raw or summarised storage?
+
+    Checks both tables: compaction deletes raw rows past RAW_CUTOFF_DAYS, so a metric
+    that stopped months ago has no raw rows at all and would otherwise look like it had
+    never existed.
+    """
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT EXISTS (SELECT 1 FROM {TABLE} "
+                f"WHERE user_id = %s AND metric_type = %s) "
+                f"OR EXISTS (SELECT 1 FROM {SUMMARY_TABLE} "
+                f"WHERE user_id = %s AND metric_type = %s)",
+                (user_id, metric_type, user_id, metric_type),
+            )
+            return bool(cur.fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _absence_note(metric_type: str, user_id: str, count: int) -> dict | None:
+    """Explain a zero result, or return None when there is nothing to explain.
+
+    An empty result has two very different causes and the API cannot tell them apart
+    on its own, so this resolves the ambiguity with a second question the caller
+    cannot ask: has this type EVER produced a row for this user?
+
+    Returned only when count == 0, so a normal answer is never cluttered.
+    """
+    if count:
+        return None
+    if metric_type not in _ALWAYS_EXPECTED_METRICS:
+        return {
+            "status": "empty_window",
+            "guidance": (
+                "No samples in this window. That may be genuine (this metric is not "
+                "recorded continuously). Do not assert the underlying activity was zero "
+                "without corroboration."
+            ),
+        }
+    if _has_any_rows_alltime(metric_type, user_id):
+        return {
+            "status": "empty_window",
+            "guidance": (
+                "No samples in this window, but this metric has data at other times, so "
+                "the pipeline works. Treat it as a gap in this window, not as a zero."
+            ),
+        }
+    return {
+        "status": "never_recorded",
+        "likely_cause": "permission_not_granted",
+        "guidance": (
+            f"{metric_type} has NEVER produced a sample for this user, which is not "
+            "possible for a metric of this kind if it were being shared. It is almost "
+            "certainly switched off for health4ai in the Apple Health app "
+            "(Sharing -> Apps). HealthKit reports a denied read as an empty result, so "
+            "neither the app nor this server can detect it any other way. DO NOT tell "
+            "the user this value is zero or that they were inactive. Tell them the "
+            "metric is not being shared and to enable it, then re-run the import."
+        ),
+    }
+
+
 def query_metric(
     metric_type: str,
     days: int = 7,
@@ -630,6 +716,12 @@ def query_metric(
     metric_type: e.g. 'HKQuantityTypeIdentifierStepCount', 'HKQuantityTypeIdentifierHeartRate'
     Windows <= 30 days return raw samples; longer windows return daily aggregates
     (raw samples beyond 30 days are summarized and no longer stored individually).
+
+    IMPORTANT: when count is 0 the response carries a 'data_status' block. Read it
+    before answering. A zero here is NOT evidence the user did nothing: iOS reports a
+    denied Health permission as an empty result, so an unshared metric and a genuinely
+    inactive day look identical. If data_status.status is 'never_recorded', tell the
+    user the metric is not being shared with health4ai rather than reporting a zero.
     """
     days = _clamp_days(days)
     limit = _clamp_limit(limit)
@@ -638,11 +730,13 @@ def query_metric(
     if days > RAW_CUTOFF_DAYS:
         points = _get_tiered_daily(metric_type, uid, days)
         _avg_fn = _daily_total_avg if metric_type in _CUMULATIVE_METRICS else _weighted_mean
+        note = _absence_note(metric_type, uid, len(points))
         return {
             "metric_type": metric_type,
             "period_days": days,
             "granularity": "daily",
             "count": len(points),
+            **({"data_status": note} if note else {}),
             "avg": _avg_fn(points),
             "min": min((p["min_value"] for p in points if p.get("min_value") is not None), default=None),
             "max": max((p["max_value"] for p in points if p.get("max_value") is not None), default=None),
@@ -658,11 +752,13 @@ def query_metric(
     rows = _fetch_metrics(metric_type, uid, since, limit=limit)
 
     values = [r["value"] for r in rows if r.get("value") is not None]
+    note = _absence_note(metric_type, uid, len(rows))
     return {
         "metric_type": metric_type,
         "period_days": days,
         "granularity": "raw",
         "count": len(rows),
+        **({"data_status": note} if note else {}),
         "avg": round(sum(values) / len(values), 2) if values else None,
         "min": min(values) if values else None,
         "max": max(values) if values else None,
@@ -1099,6 +1195,10 @@ def get_metric_stats(
     The 'thresholds' field translates percentiles into plain English:
       good_day_above = your 75th percentile (a genuinely above-average day)
       poor_day_below = your 25th percentile (a below-average day worth noting)
+
+    IMPORTANT: a data_points of 0 returns a 'data_status' block. Read it before saying
+    the user has no data — for metrics like steps or heart rate, an empty result usually
+    means the type is not shared with health4ai, not that nothing was recorded.
     """
     uid = current_user_id.get()
     days = _clamp_days(days)
@@ -1113,11 +1213,15 @@ def get_metric_stats(
     n = len(values)
 
     if n == 0:
+        # "No data found" reads as a fact about the user's behaviour. For a metric that
+        # cannot legitimately be empty it is a fact about permissions, and the caller
+        # needs to be told which of the two this is.
         return {
             "metric_type": metric_type,
             "period_days": days,
             "data_points": 0,
             "note": "No data found for this metric in the requested window",
+            "data_status": _absence_note(metric_type, uid, 0),
         }
 
     mean = sum(values) / n
