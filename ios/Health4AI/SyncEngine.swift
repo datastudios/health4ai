@@ -181,38 +181,62 @@ final class SyncEngine {
             throw SyncError.authFailed(error.localizedDescription)
         }
 
-        let anchor = syncAnchors[sampleType.identifier]
-        let (samples, newAnchor) = try await queryAnchoredSamples(type: sampleType, anchor: anchor)
+        // Drain pages until one comes back short. A single page would silently sync only
+        // the first 5,000 changes and leave the rest until the next observer fire, which
+        // on a first run for a high-volume type means never catching up.
+        var total = 0
+        while true {
+            let anchor = syncAnchors[sampleType.identifier]
+            let (samples, newAnchor) = try await queryAnchoredSamples(
+                type: sampleType, anchor: anchor)
 
-        guard !samples.isEmpty else { return 0 }
-
-        let healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
-        guard !healthSamples.isEmpty else {
-            if let newAnchor = newAnchor {
-                syncAnchors[sampleType.identifier] = newAnchor
-                saveAnchors()
+            if samples.isEmpty {
+                // Save the anchor even on an empty page: it is how HealthKit says
+                // "you are caught up", and discarding it re-asks the same question.
+                if let newAnchor { syncAnchors[sampleType.identifier] = newAnchor; saveAnchors() }
+                return total
             }
-            return 0
-        }
 
-        // Post in batches
-        let batches = stride(from: 0, to: healthSamples.count, by: Self.batchSize).map {
-            Array(healthSamples[$0..<min($0 + Self.batchSize, healthSamples.count)])
-        }
+            let healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
+            if !healthSamples.isEmpty {
+                let batches = stride(from: 0, to: healthSamples.count, by: Self.batchSize).map {
+                    Array(healthSamples[$0..<min($0 + Self.batchSize, healthSamples.count)])
+                }
+                for batch in batches {
+                    try await postSamples(batch, token: token, serverURL: serverURL)
+                }
+                total += healthSamples.count
+            }
 
-        for batch in batches {
-            try await postSamples(batch, token: token, serverURL: serverURL)
-        }
-
-        if let newAnchor = newAnchor {
+            // Advance ONLY after the page's rows are posted, so a failure mid-page
+            // re-fetches that page rather than skipping it.
+            guard let newAnchor else { return total }
             syncAnchors[sampleType.identifier] = newAnchor
             saveAnchors()
-        }
 
-        return healthSamples.count
+            if samples.count < Self.anchorPageSize { return total }
+        }
     }
 
     // MARK: - Anchored HKSample query
+
+    /// One PAGE of changes since `anchor`. Never unbounded.
+    ///
+    /// This was `HKObjectQueryNoLimit`, which on a first run (anchor nil, predicate nil)
+    /// asks HealthKit for a type's ENTIRE history in one shot. For StepCount, HeartRate
+    /// and ActiveEnergyBurned that is 800,000+ samples; the query never completes, so no
+    /// anchor is ever saved, so the next run reissues exactly the same impossible query.
+    /// Those three types had therefore NEVER live-synced a single row in the app's whole
+    /// history — verified against the database: 0 rows for each arrived within two days of
+    /// being recorded, while DistanceWalkingRunning and BasalEnergyBurned, which happened
+    /// to get a successful first run years ago when their histories were small, have
+    /// worked off small deltas ever since.
+    ///
+    /// BulkExportManager already chunks for exactly this reason ("Loading all records at
+    /// once (400K+ for steps/HR) causes iOS OOM kills") — that lesson was never applied
+    /// here. Paged, each page's anchor is saved, so a first sync makes durable progress
+    /// and a kill resumes instead of restarting.
+    static let anchorPageSize = 5_000
 
     private func queryAnchoredSamples(
         type sampleType: HKSampleType,
@@ -223,7 +247,7 @@ final class SyncEngine {
                 type: sampleType,
                 predicate: nil,
                 anchor: anchor,
-                limit: HKObjectQueryNoLimit
+                limit: Self.anchorPageSize
             ) { _, added, _, newAnchor, error in
                 if let error = error {
                     continuation.resume(throwing: error)
