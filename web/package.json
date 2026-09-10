@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "postbuild": "npm run test:performance",
+    "test:performance": "node --test scripts/performance.test.mjs",
     "preview": "astro preview"
   },
   "dependencies": {

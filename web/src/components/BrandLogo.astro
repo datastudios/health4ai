@@ -1,0 +1,9 @@
+---
+import { Image } from 'astro:assets';
+import logo from '../../public/logo.png';
+interface Props { size?: number; alt?: string; class?: string; }
+const { size = 32, alt = 'health4.ai', class: className = 'w-8 h-8 rounded-xl' } = Astro.props;
+---
+<Image src={logo} alt={alt} width={size} height={size}
+  widths={[32, 64, 96]} sizes={`${size}px`} format="webp"
+  class={className} loading="eager" decoding="async" />

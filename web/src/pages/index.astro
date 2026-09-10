@@ -1,10 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import HomeHero from '../components/HomeHero.astro';
+import HomeDetails from '../components/HomeDetails.astro';
+import BrandLogo from '../components/BrandLogo.astro';
 const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
 ---
 <Layout>
-<style>
+<style is:global>
   .ecg-main   { stroke-dasharray: 950; stroke-dashoffset: 950; animation: ecg-draw 3.8s cubic-bezier(0.4,0,0.2,1) infinite; }
   .ecg-glow   { stroke-dasharray: 950; stroke-dashoffset: 950; animation: ecg-draw 3.8s cubic-bezier(0.4,0,0.2,1) infinite; }
   .ring-pulse { animation: ring-breathe 3.2s ease-in-out infinite; }
@@ -13,9 +16,6 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
   .peak-halo  { animation: peak-pulse 3.8s ease-in-out infinite; animation-delay: 90ms; transform-origin: 156px 138px; }
   .card-a     { animation: float-up 4.8s ease-in-out infinite; }
   .card-b     { animation: float-up 4.8s ease-in-out infinite; animation-delay: 2.2s; }
-  .hero-in    { animation: fade-in-up 0.7s ease-out both; }
-  .hero-in-2  { animation: fade-in-up 0.7s ease-out 0.15s both; }
-  .hero-in-3  { animation: fade-in-up 0.7s ease-out 0.3s both; }
   .cta-glow   { animation: glow-pulse 3s ease-in-out infinite; }
   .tab-btn { padding: 6px 18px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,45,120,0.2); background: transparent; color: var(--muted); transition: all 0.2s; }
   .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -43,333 +43,15 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
   .wl-form input:disabled, .wl-form button:disabled { opacity: .5; cursor: default; animation: none; }
   .wl-form:has(:disabled) .wl-consent { cursor: default; pointer-events: none; }
   input[type="email"]:focus-visible { box-shadow: 0 0 0 2px var(--accent) !important; border-color: var(--accent) !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .ecg-main, .ecg-glow, .ring-pulse, .peak-dot, .peak-halo,
+    .card-a, .card-b, .cta-glow, .animate-pulse { animation: none; }
+    .ecg-main, .ecg-glow { stroke-dashoffset: 0; }
+  }
 </style>
 
-<!-- ── NAV ─────────────────────────────────────────────────── -->
-<nav class="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
-  <a href="/" class="flex items-center gap-2.5 group">
-    <img src="/logo.png" alt="health4.ai" class="w-8 h-8 rounded-xl" />
-    <span class="font-bold text-white tracking-tight text-[15px]">health4.ai</span>
-  </a>
-  <div class="flex items-center gap-5 text-sm" style="color:var(--muted)">
-    <a href="/how-it-works" class="hover:text-white transition-colors hidden sm:inline">How it works</a>
-    <a href="/compare" class="hover:text-white transition-colors hidden sm:inline">Compare</a>
-    <a href="/blog" class="hover:text-white transition-colors hidden sm:inline">Blog</a>
-    <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="flex items-center gap-1.5 hover:text-white transition-colors">
-      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
-      GitHub
-    </a>
-    <a href="#waitlist" class="px-4 py-1.5 rounded-full text-white font-semibold text-xs transition-all cta-glow" style="background:var(--accent)">Get early access</a>
-  </div>
-</nav>
-
-<!-- ── HERO ────────────────────────────────────────────────── -->
-<section class="relative overflow-hidden px-6 pt-10 pb-20 max-w-6xl mx-auto">
-  <!-- background glow blobs -->
-  <div class="pointer-events-none absolute -top-24 right-0 w-[500px] h-[500px] rounded-full opacity-[0.07]" style="background:radial-gradient(circle,#ff2d78 0%,transparent 70%)"></div>
-  <div class="pointer-events-none absolute bottom-0 left-1/4 w-[300px] h-[300px] rounded-full opacity-[0.04]" style="background:radial-gradient(circle,#ff2d78 0%,transparent 70%)"></div>
-
-  <div class="grid grid-cols-1 lg:grid-cols-[1fr_420px] items-center gap-12 lg:gap-8">
-
-    <!-- Left: text -->
-    <div class="max-w-xl">
-      <div class="hero-in inline-flex items-center gap-2 text-xs font-semibold border rounded-full px-3 py-1 mb-7" style="color:var(--accent);border-color:var(--border);background:rgba(255,45,120,0.06)">
-        <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:var(--accent)"></span>
-        Free · Coming to App Store
-      </div>
-      <h1 class="hero-in-2 text-4xl sm:text-[3.25rem] font-extrabold leading-[1.08] tracking-tight text-white mb-5">
-        Your health data,<br><span style="color:var(--accent)">alive in AI.</span>
-      </h1>
-      <p class="hero-in-3 text-base leading-relaxed mb-8" style="color:var(--muted)">
-        A free iOS app that syncs all of Apple Health to your own database — then gives every AI a live window into your sleep, HRV, recovery, and fitness. Works with Claude, ChatGPT, Cursor, and any MCP client.
-      </p>
-
-      <!-- Live metric pills -->
-      <div class="hero-in-3 flex flex-wrap gap-2 mb-8">
-        {[['HRV','62 ms','↑'],['Sleep','7h 23m',''],['Steps','8,432',''],['VO₂ Max','47.2','']].map(([label,val,arrow]) => (
-          <span class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style="background:rgba(255,45,120,0.08);border:1px solid rgba(255,45,120,0.18);color:#e2c8d4">
-            <span style="color:var(--muted)">{label}</span>
-            <span class="text-white">{val}</span>
-            {arrow && <span style="color:var(--accent)">{arrow}</span>}
-          </span>
-        ))}
-      </div>
-
-      <!-- Waitlist form -->
-      <form id="waitlist-form" class="wl-form hero-in-3 max-w-md">
-        <input type="text" id="hp-1" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true" />
-        <input type="email" id="email-input" placeholder="your@email.com" required
-          class="wl-email rounded-xl px-4 py-3 text-white text-sm outline-none focus:ring-1 transition-all"
-          style="background:#0f1225;border:1px solid rgba(255,255,255,0.1);--tw-ring-color:var(--accent)" />
-        <label for="tf-consent-1" class="wl-consent flex items-start gap-2 -mx-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs leading-relaxed transition-colors active:bg-white/5" style="color:var(--muted)">
-          <input type="checkbox" id="tf-consent-1" class="mt-0.5 shrink-0 accent-[var(--accent)]" style="width:16px;height:16px" />
-          <span>Also send me the TestFlight beta invite. Your email is <a href="/privacy#testflight" target="_blank" rel="noopener" class="underline hover:no-underline">shared with Apple<span class="sr-only"> (opens in a new tab)</span></a> to create the invitation.</span>
-        </label>
-        <button type="submit" class="wl-submit px-6 py-3 rounded-xl text-white font-bold text-sm whitespace-nowrap transition-all cta-glow" style="background:var(--accent)">
-          Join waitlist
-        </button>
-      </form>
-      <p id="form-status" aria-live="polite" class="text-xs mt-2.5 min-h-[18px]" style="color:var(--muted)"></p>
-    </div>
-
-    <!-- Right: ECG ring -->
-    <div class="relative mx-auto w-full max-w-[320px] sm:max-w-[420px] aspect-square">
-      <svg viewBox="0 0 400 400" class="w-full h-full" aria-hidden="true">
-        <defs>
-          <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stop-color="#ff2d78" stop-opacity="0.1"/>
-            <stop offset="100%" stop-color="#ff2d78" stop-opacity="0"/>
-          </radialGradient>
-          <filter id="ecgGlow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="3.5" result="blur"/>
-            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-          </filter>
-        </defs>
-        <circle cx="200" cy="200" r="192" fill="url(#bgGlow)"/>
-        <circle cx="200" cy="200" r="183" fill="none" stroke="#ff2d78" stroke-width="1" stroke-opacity="0.1"/>
-        <circle cx="200" cy="200" r="172" fill="none" stroke="#ff2d78" stroke-width="26" stroke-opacity="0.055" stroke-dasharray="4 2.5"/>
-        <circle cx="200" cy="200" r="172" fill="none" stroke="#ff2d78" stroke-width="26" stroke-opacity="0.04" stroke-dasharray="2.5 4" transform="rotate(60 200 200)"/>
-        <circle cx="200" cy="200" r="172" fill="none" stroke="#ff2d78" stroke-width="2.5" stroke-opacity="0.5" class="ring-pulse"/>
-        <circle cx="200" cy="200" r="152" fill="none" stroke="#ff2d78" stroke-width="0.75" stroke-opacity="0.2"/>
-        <circle cx="200" cy="200" r="128" fill="none" stroke="#ff2d78" stroke-width="0.5" stroke-opacity="0.12"/>
-        <!-- ECG glow layer -->
-        <path d="M 22,200 L 86,200 L 100,193 L 114,200 L 133,200 L 141,208 L 156,138 L 169,228 L 181,198 L 198,200 L 213,183 L 228,200 L 378,200"
-          fill="none" stroke="#ff2d78" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"
-          stroke-opacity="0.4" filter="url(#ecgGlow)" class="ecg-glow"/>
-        <!-- ECG main line -->
-        <path d="M 22,200 L 86,200 L 100,193 L 114,200 L 133,200 L 141,208 L 156,138 L 169,228 L 181,198 L 198,200 L 213,183 L 228,200 L 378,200"
-          fill="none" stroke="#ff2d78" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
-          class="ecg-main"/>
-        <!-- ECG white highlight -->
-        <path d="M 22,200 L 86,200 L 100,193 L 114,200 L 133,200 L 141,208 L 156,138 L 169,228 L 181,198 L 198,200 L 213,183 L 228,200 L 378,200"
-          fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
-          class="ecg-main"/>
-        <!-- R-peak indicator -->
-        <circle cx="156" cy="138" r="12" fill="#ff2d78" fill-opacity="0.18" class="peak-halo"/>
-        <circle cx="156" cy="138" r="5"  fill="#ff2d78" class="peak-dot"/>
-      </svg>
-
-      <!-- Floating metric cards -->
-      <div class="card-a absolute top-[8%] left-[3%] rounded-xl px-3 py-2.5 text-left" style="background:rgba(10,12,26,0.88);border:1px solid rgba(255,45,120,0.22);backdrop-filter:blur(12px)">
-        <div class="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style="color:var(--muted)">HRV</div>
-        <div class="text-[22px] font-bold leading-none text-white mb-0.5">62<span class="text-xs font-normal ml-0.5" style="color:var(--muted)">ms</span></div>
-        <div class="text-[10px] font-semibold" style="color:var(--accent)">↑ Good recovery</div>
-      </div>
-      <div class="card-b absolute bottom-[10%] right-[3%] rounded-xl px-3 py-2.5 text-left" style="background:rgba(10,12,26,0.88);border:1px solid rgba(255,45,120,0.22);backdrop-filter:blur(12px)">
-        <div class="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style="color:var(--muted)">Last Night</div>
-        <div class="text-[22px] font-bold leading-none text-white mb-0.5">7h 23<span class="text-xs font-normal ml-0.5" style="color:var(--muted)">m</span></div>
-        <div class="text-[10px]" style="color:var(--accent-light)">Deep 1h 12m · REM 1h 34m</div>
-      </div>
-    </div>
-
-  </div>
-</section>
-
-<!-- ── STATS STRIP ─────────────────────────────────────────── -->
-<div class="border-y px-6 py-5" style="border-color:rgba(255,255,255,0.06);background:rgba(15,18,37,0.5)">
-  <div class="max-w-6xl mx-auto flex flex-wrap justify-center sm:justify-between gap-6 text-center">
-    {[['Millions','of datapoints per user, over time'],['8','MCP tools for AI'],['150+','HealthKit metric types'],['Any AI','Claude · ChatGPT · Ollama · more']].map(([num,label]) => (
-      <div>
-        <div class="text-xl font-bold text-white">{num}</div>
-        <div class="text-xs mt-0.5" style="color:var(--muted)">{label}</div>
-      </div>
-    ))}
-  </div>
-</div>
-
-<!-- ── CLAUDE DEMO ─────────────────────────────────────────── -->
-<section class="px-6 py-20 max-w-6xl mx-auto">
-  <div class="text-xs font-semibold uppercase tracking-widest mb-5" style="color:var(--muted)">What it looks like in Claude</div>
-  <div class="rounded-2xl overflow-hidden" style="background:#06070f;border:1px solid rgba(255,255,255,0.07)">
-    <!-- Window chrome -->
-    <div class="flex items-center gap-2 px-4 py-3 border-b" style="border-color:rgba(255,255,255,0.06)">
-      <span class="w-3 h-3 rounded-full" style="background:#ff5f57"></span>
-      <span class="w-3 h-3 rounded-full" style="background:#febc2e"></span>
-      <span class="w-3 h-3 rounded-full" style="background:#28c840"></span>
-      <span class="text-xs ml-3" style="color:#4a5580">Claude · health4ai MCP connected</span>
-    </div>
-    <div class="p-5 sm:p-8 space-y-5 text-sm">
-      <!-- User message -->
-      <div class="flex justify-end">
-        <div class="rounded-2xl rounded-tr-sm px-4 py-3 max-w-xs text-white text-sm" style="background:rgba(255,45,120,0.18);border:1px solid rgba(255,45,120,0.2)">
-          How was my recovery this week? Anything standing out?
-        </div>
-      </div>
-      <!-- Claude response -->
-      <div class="flex gap-3">
-        <div class="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold" style="background:rgba(255,45,120,0.15);color:var(--accent)">C</div>
-        <div class="flex-1 space-y-3">
-          <p style="color:#c8d0e8">Your HRV trended well this week — Wednesday was a standout at <span style="color:var(--accent-light)">71ms</span>, your highest in 3 weeks. Here's the full picture:</p>
-          <div class="rounded-xl p-4 font-mono text-xs space-y-1.5" style="background:#0a0c1a;border:1px solid rgba(255,255,255,0.07)">
-            {[['Mon','68ms','████████████','↑ +8%'],['Tue','58ms','██████████',''],['Wed','71ms','█████████████','Peak'],['Thu','62ms','███████████',''],['Fri','66ms','████████████','↑ avg']].map(([d,v,bar,note]) => (
-              <div class="flex items-center gap-3">
-                <span class="w-8" style="color:#4a5580">{d}</span>
-                <span class="w-12" style="color:var(--accent)">{v}</span>
-                <span style="color:rgba(255,45,120,0.5)">{bar}</span>
-                {note && <span class="text-[10px]" style="color:var(--muted)">{note}</span>}
-              </div>
-            ))}
-          </div>
-          <p class="text-xs" style="color:var(--muted)">avg: 65ms · range: 58–71ms · 7-day trend: ↑<br/>Sleep was consistent (7h 10m avg). Active energy slightly below your baseline on Tuesday — rest day effect.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ── BACKEND: YOUR DATABASE ──────────────────────────────── -->
-<section class="px-6 py-20 border-t" style="border-color:rgba(255,255,255,0.06)">
-  <div class="max-w-6xl mx-auto">
-    <div class="max-w-2xl mb-12">
-      <div class="text-xs font-semibold uppercase tracking-widest mb-4" style="color:var(--accent)">Your database, your rules</div>
-      <h2 class="text-3xl font-extrabold tracking-tight text-white mb-4">Set up in two commands.<br>Own your data forever.</h2>
-      <p style="color:var(--muted)" class="text-base leading-relaxed">
-        health4.ai syncs to any Postgres — Supabase, Neon, or a Docker container on your laptop. Run the schema, add your connection string to the iOS app, done. No subscriptions, no black-box cloud, no lock-in.
-      </p>
-    </div>
-
-    <!-- Tab buttons -->
-    <div class="flex flex-wrap gap-2 mb-6" id="backend-tabs">
-      <button class="tab-btn active" data-tab="supabase">Supabase <span class="text-[10px] ml-1 opacity-70">recommended</span></button>
-      <button class="tab-btn" data-tab="neon">Neon</button>
-      <button class="tab-btn" data-tab="local">Local / Docker</button>
-    </div>
-
-    <!-- Supabase -->
-    <div id="tab-supabase" class="backend-content">
-      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        <div class="code-block">
-<span class="cm"># 1. Create a free project at supabase.com</span>
-<span class="cm">#    Settings → Database → Connection string → URI</span>
-
-<span class="cm"># 2. Run the health4ai schema</span>
-<span class="kw">psql</span> <span class="str">"$SUPABASE_DB_URL"</span> \
-  &lt; <span class="str">https://health4.ai/schema.sql</span>
-
-<span class="cm"># 3. Paste your Supabase URL + anon key</span>
-<span class="cm">#    into the iOS app — sync starts automatically.</span>
-        </div>
-        <div class="rounded-xl p-5 space-y-3" style="background:rgba(15,18,37,0.7);border:1px solid var(--border)">
-          <div class="text-sm font-bold text-white mb-1">Why Supabase</div>
-          {[['Free tier','500 MB storage, no credit card'],['Hosted Postgres','No server to maintain'],['Row-level security','Built-in RLS — your data stays yours'],['Dashboard','Query your health data in a web UI']].map(([k,v])=>(
-            <div class="flex gap-3 text-xs">
-              <span style="color:var(--accent)">✓</span>
-              <span><span class="text-white font-medium">{k}</span> <span style="color:var(--muted)">— {v}</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <!-- Neon -->
-    <div id="tab-neon" class="backend-content" hidden>
-      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        <div class="code-block">
-<span class="cm"># 1. Create a free project at neon.tech</span>
-<span class="cm">#    Dashboard → Connection Details → copy URI</span>
-
-<span class="cm"># 2. Run the health4ai schema</span>
-<span class="kw">psql</span> <span class="str">"$NEON_DATABASE_URL"</span> \
-  &lt; <span class="str">https://health4.ai/schema.sql</span>
-
-<span class="cm"># 3. Paste your Neon connection string</span>
-<span class="cm">#    into the iOS app settings.</span>
-        </div>
-        <div class="rounded-xl p-5 space-y-3" style="background:rgba(15,18,37,0.7);border:1px solid var(--border)">
-          <div class="text-sm font-bold text-white mb-1">Why Neon</div>
-          {[['Serverless','Scales to zero — no idle cost'],['Branching','Clone your DB in seconds for testing'],['Free tier','3 GB storage, always free'],['Pure Postgres','100% compatible, no surprises']].map(([k,v])=>(
-            <div class="flex gap-3 text-xs">
-              <span style="color:var(--accent)">✓</span>
-              <span><span class="text-white font-medium">{k}</span> <span style="color:var(--muted)">— {v}</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <!-- Local -->
-    <div id="tab-local" class="backend-content" hidden>
-      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        <div class="code-block">
-<span class="cm"># Start Postgres with Docker</span>
-<span class="kw">docker</span> run -d --name health4ai-db \
-  -e POSTGRES_PASSWORD=<span class="str">yourpassword</span> \
-  -p 5432:5432 postgres:16-alpine
-
-<span class="cm"># Run the schema</span>
-<span class="kw">psql</span> -h localhost -U postgres \
-  &lt; <span class="str">https://health4.ai/schema.sql</span>
-
-<span class="cm"># Expose to iOS (pick one):</span>
-<span class="cm">#   Tailscale: automatic, zero config</span>
-<span class="cm">#   ngrok:  ngrok tcp 5432</span>
-<span class="cm">#   Cloudflare: cloudflared access tcp</span>
-        </div>
-        <div class="rounded-xl p-5 space-y-3" style="background:rgba(15,18,37,0.7);border:1px solid var(--border)">
-          <div class="text-sm font-bold text-white mb-1">Why local</div>
-          {[['Full control','Your data never leaves your machine'],['Zero cost','Postgres is free, Docker is free'],['Air-gapped option','Works without any cloud dependency'],['Power user','Extend the schema however you want']].map(([k,v])=>(
-            <div class="flex gap-3 text-xs">
-              <span style="color:var(--accent)">✓</span>
-              <span><span class="text-white font-medium">{k}</span> <span style="color:var(--muted)">— {v}</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <p class="mt-5 text-xs" style="color:var(--muted)">
-      Schema file: <a href="/schema.sql" class="hover:text-white transition-colors" style="color:var(--accent)">health4.ai/schema.sql</a> · Compatible with any Postgres 14+
-    </p>
-  </div>
-</section>
-
-<!-- ── HOW IT WORKS ────────────────────────────────────────── -->
-<section class="px-6 py-20 border-t" style="border-color:rgba(255,255,255,0.06)">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-xs font-semibold uppercase tracking-widest mb-12" style="color:var(--muted)">How it works</div>
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-      {[
-        { n:'01', title:'Install the iOS app', body:'Tap to authorize HealthKit. Background sync starts immediately — HKObserverQuery + BGProcessingTask push every new sample as it arrives, without opening the app.', icon:'📱' },
-        { n:'02', title:'Connect your database', body:'Point the app at your Postgres: Supabase, Neon, or a local Docker container. Run the schema once. Your decade of health history lands on day one.', icon:'🗄️' },
-        { n:'03', title:'Ask your AI anything', body:'Add one line to your Claude Desktop or Cursor config. Then ask: "How\'s my sleep debt this week?" "When was my HRV last above 70?" "Am I ready to train tomorrow?"', icon:'🤖' },
-      ].map(({ n, title, body, icon }) => (
-        <div class="rounded-2xl p-6 flex flex-col" style="background:rgba(15,18,37,0.6);border:1px solid rgba(255,255,255,0.07)">
-          <div class="flex items-center gap-3 mb-5">
-            <span class="text-2xl">{icon}</span>
-            <span class="text-xs font-bold" style="color:var(--accent)">{n}</span>
-          </div>
-          <h3 class="text-white font-bold text-base mb-3">{title}</h3>
-          <p class="text-sm leading-relaxed flex-1" style="color:var(--muted)">{body}</p>
-        </div>
-      ))}
-    </div>
-  </div>
-</section>
-
-<!-- ── FEATURES ────────────────────────────────────────────── -->
-<section class="px-6 py-20 border-t" style="border-color:rgba(255,255,255,0.06)">
-  <div class="max-w-6xl mx-auto">
-    <div class="text-xs font-semibold uppercase tracking-widest mb-12" style="color:var(--muted)">Why health4.ai</div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-      {[
-        { title:'Works with every AI — not just claude.ai', detail:"Claude's native Apple Health connector only works on claude.ai web. health4.ai also works with Claude Code, the Claude API, ChatGPT, Cursor, and any tool that supports MCP." },
-        { title:'A decade of history, queryable in seconds', detail:'The iOS app backfills your full Apple Health archive on first sync — every step, heartbeat, and workout going back to when you first wore a wearable.' },
-        { title:'Background sync — nothing to export', detail:'HKObserverQuery fires the moment Apple Health gets a new sample. Your AI always has fresh data without you doing anything.' },
-        { title:'Private by design — you own the database', detail:"Your health data syncs to a Postgres database you control. We don't store a copy, sell it, or have access to it. GDPR-friendly by construction." },
-      ].map(({ title, detail }) => (
-        <div class="flex gap-4 rounded-2xl p-5" style="background:rgba(15,18,37,0.5);border:1px solid rgba(255,255,255,0.06)">
-          <div class="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center" style="background:rgba(255,45,120,0.15)">
-            <svg class="w-3 h-3" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#ff2d78" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
-          <div>
-            <h3 class="text-white font-semibold text-sm mb-1.5">{title}</h3>
-            <p class="text-xs leading-relaxed" style="color:var(--muted)">{detail}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-</section>
+<HomeHero />
+<HomeDetails />
 
 <!-- ── FOOTER CTA ──────────────────────────────────────────── -->
 <section id="waitlist" class="px-6 py-24 text-center relative overflow-hidden">
@@ -400,7 +82,7 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
 <footer class="border-t px-6 py-8" style="border-color:rgba(255,255,255,0.06)">
   <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs" style="color:#4a5580">
     <div class="flex items-center gap-2">
-      <img src="/logo.png" alt="" class="w-5 h-5 rounded-md opacity-60" />
+      <BrandLogo size={20} alt="" class="w-5 h-5 rounded-md opacity-60" />
       <span>© 2026 health4.ai · Not a medical device</span>
     </div>
     <div class="flex gap-6">

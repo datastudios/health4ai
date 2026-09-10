@@ -1,5 +1,6 @@
 ---
 import Layout from '../../layouts/Layout.astro';
+import BrandLogo from '../../components/BrandLogo.astro';
 import { getCollection } from 'astro:content';
 
 const allPosts = await getCollection('blog', ({ data }) => {
@@ -26,7 +27,7 @@ function formatDate(d: Date) {
 >
 <nav class="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
   <a href="/" class="flex items-center gap-2.5">
-    <img src="/logo.png" alt="health4.ai" class="w-8 h-8 rounded-xl" />
+    <BrandLogo />
     <span class="font-bold text-white tracking-tight text-[15px]">health4.ai</span>
   </a>
   <div class="flex items-center gap-5 text-sm" style="color:var(--muted)">

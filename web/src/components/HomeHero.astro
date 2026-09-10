@@ -1,0 +1,122 @@
+---
+import BrandLogo from './BrandLogo.astro';
+---
+<!-- ── NAV ─────────────────────────────────────────────────── -->
+<nav class="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
+  <a href="/" class="flex items-center gap-2.5 group">
+    <BrandLogo />
+    <span class="font-bold text-white tracking-tight text-[15px]">health4.ai</span>
+  </a>
+  <div class="flex items-center gap-5 text-sm" style="color:var(--muted)">
+    <a href="/how-it-works" class="hover:text-white transition-colors hidden sm:inline">How it works</a>
+    <a href="/compare" class="hover:text-white transition-colors hidden sm:inline">Compare</a>
+    <a href="/blog" class="hover:text-white transition-colors hidden sm:inline">Blog</a>
+    <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="flex items-center gap-1.5 hover:text-white transition-colors">
+      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clip-rule="evenodd"/></svg>
+      GitHub
+    </a>
+    <a href="#waitlist" class="px-4 py-1.5 rounded-full text-white font-semibold text-xs transition-all cta-glow" style="background:var(--accent)">Get early access</a>
+  </div>
+</nav>
+
+<!-- ── HERO ────────────────────────────────────────────────── -->
+<section class="relative overflow-hidden px-6 pt-10 pb-20 max-w-6xl mx-auto">
+  <!-- background glow blobs -->
+  <div class="pointer-events-none absolute -top-24 right-0 w-[500px] h-[500px] rounded-full opacity-[0.07]" style="background:radial-gradient(circle,#ff2d78 0%,transparent 70%)"></div>
+  <div class="pointer-events-none absolute bottom-0 left-1/4 w-[300px] h-[300px] rounded-full opacity-[0.04]" style="background:radial-gradient(circle,#ff2d78 0%,transparent 70%)"></div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-[1fr_420px] items-center gap-12 lg:gap-8">
+
+    <!-- Left: text -->
+    <div class="max-w-xl">
+      <div class="inline-flex items-center gap-2 text-xs font-semibold border rounded-full px-3 py-1 mb-7" style="color:var(--accent);border-color:var(--border);background:rgba(255,45,120,0.06)">
+        <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:var(--accent)"></span>
+        Free · Coming to App Store
+      </div>
+      <h1 class="text-4xl sm:text-[3.25rem] font-extrabold leading-[1.08] tracking-tight text-white mb-5">
+        Your health data,<br><span style="color:var(--accent)">alive in AI.</span>
+      </h1>
+      <p class="text-base leading-relaxed mb-8" style="color:var(--muted)">
+        A free iOS app that syncs all of Apple Health to your own database — then gives every AI a live window into your sleep, HRV, recovery, and fitness. Works with Claude, ChatGPT, Cursor, and any MCP client.
+      </p>
+
+      <!-- Live metric pills -->
+      <div class="flex flex-wrap gap-2 mb-8">
+        {[['HRV','62 ms','↑'],['Sleep','7h 23m',''],['Steps','8,432',''],['VO₂ Max','47.2','']].map(([label,val,arrow]) => (
+          <span class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold" style="background:rgba(255,45,120,0.08);border:1px solid rgba(255,45,120,0.18);color:#e2c8d4">
+            <span style="color:var(--muted)">{label}</span>
+            <span class="text-white">{val}</span>
+            {arrow && <span style="color:var(--accent)">{arrow}</span>}
+          </span>
+        ))}
+      </div>
+
+      <!-- Waitlist form -->
+      <form id="waitlist-form" class="wl-form max-w-md">
+        <input type="text" id="hp-1" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true" />
+        <input type="email" id="email-input" placeholder="your@email.com" required
+          class="wl-email rounded-xl px-4 py-3 text-white text-sm outline-none focus:ring-1 transition-all"
+          style="background:#0f1225;border:1px solid rgba(255,255,255,0.1);--tw-ring-color:var(--accent)" />
+        <label for="tf-consent-1" class="wl-consent flex items-start gap-2 -mx-2 px-2 py-1.5 rounded-lg cursor-pointer text-xs leading-relaxed transition-colors active:bg-white/5" style="color:var(--muted)">
+          <input type="checkbox" id="tf-consent-1" class="mt-0.5 shrink-0 accent-[var(--accent)]" style="width:16px;height:16px" />
+          <span>Also send me the TestFlight beta invite. Your email is <a href="/privacy#testflight" target="_blank" rel="noopener" class="underline hover:no-underline">shared with Apple<span class="sr-only"> (opens in a new tab)</span></a> to create the invitation.</span>
+        </label>
+        <button type="submit" class="wl-submit px-6 py-3 rounded-xl text-white font-bold text-sm whitespace-nowrap transition-all cta-glow" style="background:var(--accent)">
+          Join waitlist
+        </button>
+      </form>
+      <p id="form-status" aria-live="polite" class="text-xs mt-2.5 min-h-[18px]" style="color:var(--muted)"></p>
+    </div>
+
+    <!-- Right: ECG ring -->
+    <div class="relative mx-auto w-full max-w-[320px] sm:max-w-[420px] aspect-square">
+      <svg viewBox="0 0 400 400" class="w-full h-full" aria-hidden="true">
+        <defs>
+          <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ff2d78" stop-opacity="0.1"/>
+            <stop offset="100%" stop-color="#ff2d78" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="ecgGlow" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur stdDeviation="3.5" result="blur"/>
+            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+          </filter>
+        </defs>
+        <circle cx="200" cy="200" r="192" fill="url(#bgGlow)"/>
+        <circle cx="200" cy="200" r="183" fill="none" stroke="#ff2d78" stroke-width="1" stroke-opacity="0.1"/>
+        <circle cx="200" cy="200" r="172" fill="none" stroke="#ff2d78" stroke-width="26" stroke-opacity="0.055" stroke-dasharray="4 2.5"/>
+        <circle cx="200" cy="200" r="172" fill="none" stroke="#ff2d78" stroke-width="26" stroke-opacity="0.04" stroke-dasharray="2.5 4" transform="rotate(60 200 200)"/>
+        <circle cx="200" cy="200" r="172" fill="none" stroke="#ff2d78" stroke-width="2.5" stroke-opacity="0.5" class="ring-pulse"/>
+        <circle cx="200" cy="200" r="152" fill="none" stroke="#ff2d78" stroke-width="0.75" stroke-opacity="0.2"/>
+        <circle cx="200" cy="200" r="128" fill="none" stroke="#ff2d78" stroke-width="0.5" stroke-opacity="0.12"/>
+        <!-- ECG glow layer -->
+        <path d="M 22,200 L 86,200 L 100,193 L 114,200 L 133,200 L 141,208 L 156,138 L 169,228 L 181,198 L 198,200 L 213,183 L 228,200 L 378,200"
+          fill="none" stroke="#ff2d78" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"
+          stroke-opacity="0.4" filter="url(#ecgGlow)" class="ecg-glow"/>
+        <!-- ECG main line -->
+        <path d="M 22,200 L 86,200 L 100,193 L 114,200 L 133,200 L 141,208 L 156,138 L 169,228 L 181,198 L 198,200 L 213,183 L 228,200 L 378,200"
+          fill="none" stroke="#ff2d78" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"
+          class="ecg-main"/>
+        <!-- ECG white highlight -->
+        <path d="M 22,200 L 86,200 L 100,193 L 114,200 L 133,200 L 141,208 L 156,138 L 169,228 L 181,198 L 198,200 L 213,183 L 228,200 L 378,200"
+          fill="none" stroke="rgba(255,255,255,0.55)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"
+          class="ecg-main"/>
+        <!-- R-peak indicator -->
+        <circle cx="156" cy="138" r="12" fill="#ff2d78" fill-opacity="0.18" class="peak-halo"/>
+        <circle cx="156" cy="138" r="5"  fill="#ff2d78" class="peak-dot"/>
+      </svg>
+
+      <!-- Floating metric cards -->
+      <div class="card-a absolute top-[8%] left-[3%] rounded-xl px-3 py-2.5 text-left" style="background:rgba(10,12,26,0.88);border:1px solid rgba(255,45,120,0.22);backdrop-filter:blur(12px)">
+        <div class="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style="color:var(--muted)">HRV</div>
+        <div class="text-[22px] font-bold leading-none text-white mb-0.5">62<span class="text-xs font-normal ml-0.5" style="color:var(--muted)">ms</span></div>
+        <div class="text-[10px] font-semibold" style="color:var(--accent)">↑ Good recovery</div>
+      </div>
+      <div class="card-b absolute bottom-[10%] right-[3%] rounded-xl px-3 py-2.5 text-left" style="background:rgba(10,12,26,0.88);border:1px solid rgba(255,45,120,0.22);backdrop-filter:blur(12px)">
+        <div class="text-[9px] font-semibold uppercase tracking-widest mb-0.5" style="color:var(--muted)">Last Night</div>
+        <div class="text-[22px] font-bold leading-none text-white mb-0.5">7h 23<span class="text-xs font-normal ml-0.5" style="color:var(--muted)">m</span></div>
+        <div class="text-[10px]" style="color:var(--accent-light)">Deep 1h 12m · REM 1h 34m</div>
+      </div>
+    </div>
+
+  </div>
+</section>
