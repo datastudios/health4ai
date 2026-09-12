@@ -106,7 +106,12 @@ Deno.serve(async (req: Request) => {
     ) {
       return json({ error: 'String field exceeds maximum length of 256' }, 400)
     }
-    if (s.metadata !== null && (typeof s.metadata !== 'object' || Array.isArray(s.metadata))) {
+    // `!= null`, not `!== null`. The iOS app's HealthSample uses synthesized Codable, which OMITS a nil
+    // optional rather than writing null, so a sample without metadata arrives with the key absent
+    // (undefined). The strict check rejected every such sample with a 400, and one of them fails its
+    // whole batch: in production, 2026-09-12, BasalEnergyBurned, DistanceWalkingRunning, WalkingSpeed
+    // and every other metadata-less type stopped syncing the moment this deployed. Absent means null.
+    if (s.metadata != null && (typeof s.metadata !== 'object' || Array.isArray(s.metadata))) {
       return json({ error: 'Metadata must be an object or null' }, 400)
     }
     if (s.metadata && new TextEncoder().encode(JSON.stringify(s.metadata)).length > MAX_METADATA_BYTES) {
