@@ -24,21 +24,21 @@
 ## Product Facts (write from these — do not invent)
 
 ### What it is
-A two-part system: an iOS app that syncs HealthKit data to any PostgreSQL database in the background, and an MCP server that lets AI clients (Claude Code, Cursor, Ollama) query that data as native tool calls.
+A two-part system: an iOS app that syncs HealthKit data to a Supabase project the user owns, in the background, and an MCP server that lets AI clients (Claude Code, Cursor, Ollama) query that data as native tool calls.
 
 ### iOS App (screens/features)
 - **Home screen:** Sync Status card (last sync time, next scheduled sync), metrics grid showing recent data, MCP Setup card with connection info, backfill card, manual actions
-- **Onboarding:** guides user through HealthKit permissions and database credentials
-- **Connection screen:** enter Supabase/Neon/Postgres connection string — that's it
+- **Onboarding:** Welcome, Privacy, HealthKit permissions. Backend setup happens afterwards, in the Connect tab
+- **Connection screen:** Supabase Project URL + anon key, then sign in as a user created in that project's dashboard. The app never takes a database connection string
 - **Background sync:** uses HKObserverQuery (true push delivery from HealthKit) — NOT polling or BGProcessingTask, which is why other solutions fail
 - **Full backfill:** on first launch, imports complete HealthKit history. 5+ years of data in one shot.
-- **No account required:** data goes to the user's own database. health4ai never sees it.
+- **No health4ai account:** data goes to the user's own Supabase project (the user creates their own Auth user there). health4ai never sees it.
 - **Requires:** iOS 17+, iPhone with Apple Watch or Health app data
 
 ### Supported database backends
-- Supabase (recommended — free tier covers personal use)
-- Neon (serverless Postgres)
-- Any self-hosted PostgreSQL with TLS
+- **Supabase only** (a project the user owns; the free tier covers personal use). The app signs in with Supabase Auth and writes through the `healthkit-ingest` Edge Function.
+- **NOT supported:** Neon, local Docker, any other plain Postgres, and the app's former "REST / Webhook" option. None has an ingest path; none ever synced a row (measured 2026-09-12, register D353). Do not write content describing them as options.
+- Setup source of truth: `docs/SETUP.md` in the repo. Use its exact commands.
 
 ### HealthKit Metrics Synced
 Activity: steps, distance (walking/running/cycling/swimming), active energy burned, basal energy, flights climbed, exercise time, stand time, walking steadiness  
@@ -156,10 +156,10 @@ Outline: Prerequisites → Create Supabase project (free tier) → Run schema �
 Notes: Step by step. Use exact commands from SETUP.md. "Ask: 'Give me a health summary for the last 7 days'" as the verification step.
 
 **Article 6**  
-Title: `How to Set Up health4ai with Neon (Serverless Postgres)`  
+Title: ~~How to Set Up health4ai with Neon (Serverless Postgres)~~ **RETIRED 2026-09-12**  
 Keyword: healthkit neon postgres  
-Outline: Why Neon for health data (serverless, branching, free tier) → Setup steps → Key difference from Supabase setup → Connection string format → Test  
-Notes: Neon is growing fast in the dev community. Good SEO target and LLM citation for "healthkit neon."
+Outline: n/a. Neon is not a supported backend. The published post at /blog/healthkit-neon-postgres was rewritten as "Can health4ai use Neon? Not with the iOS app".  
+Notes: Do not write Neon setup content. If the keyword is worth keeping, keep the "not supported, use Supabase" framing.
 
 **Article 7**  
 Title: `How to Query Your Apple Health Data with Claude Code`  
@@ -312,7 +312,7 @@ Articles publish in this order, dates to be set by Camille's WF:
 | 7 | Mon Jul 7 | 11 | AI Health Coaching System |
 | 8 | Wed Jul 9 | 13 | HRV Trends with Claude |
 | 9 | Fri Jul 11 | 14 | n8n Workflow |
-| 10 | Mon Jul 14 | 6 | Setup with Neon |
+| 10 | Mon Jul 14 | 6 | Neon (rewritten 2026-09-12 as "not supported") |
 | 11 | Wed Jul 16 | 8 | Using with Cursor |
 | 12 | Fri Jul 18 | 10 | MCP Tools Reference |
 

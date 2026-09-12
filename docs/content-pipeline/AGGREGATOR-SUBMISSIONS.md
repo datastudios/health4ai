@@ -9,7 +9,7 @@ Repo: https://github.com/punkpeye/awesome-mcp-servers
 Find the "Health" section (or add it). PR adds this line:
 
 ```markdown
-- [health4ai](https://github.com/jefflitt1/health4ai) - Apple HealthKit → PostgreSQL sync + MCP server for Claude Code, Cursor, and Ollama. iOS app with background sync (HKObserverQuery), 9 MCP tools (health summary, sleep, HRV, workouts, coaching brief). Supports Supabase, Neon, self-hosted Postgres.
+- [health4ai](https://github.com/jefflitt1/health4ai) - Apple HealthKit → your own Supabase project + MCP server for Claude Code, Cursor, and Ollama. iOS app with background sync (HKObserverQuery), MCP tools for health summary, sleep, HRV, workouts, and a coaching brief. Requires a Supabase project you own.
 ```
 
 Section: **Health** (create if it doesn't exist)
@@ -21,7 +21,7 @@ Section: **Health** (create if it doesn't exist)
 URL: https://mcp.so/submit  
 Fields to fill:
 - **Name:** health4ai
-- **Description:** Apple HealthKit → PostgreSQL sync + MCP server. iOS app with background sync, 9 MCP tools for health summaries, sleep, HRV, workouts, and coaching. Supports Supabase, Neon, self-hosted Postgres.
+- **Description:** Apple HealthKit → your own Supabase project + MCP server. iOS app with background sync, MCP tools for health summaries, sleep, HRV, workouts, and coaching. Requires a Supabase project you own.
 - **GitHub:** https://github.com/jefflitt1/health4ai
 - **Category:** Health / Personal
 - **Tags:** healthkit, apple-health, supabase, claude, mcp, health-data, ios

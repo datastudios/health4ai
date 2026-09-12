@@ -35,7 +35,7 @@ Apple doesn't run a server-side HealthKit API, so every one of these products �
 
 ## How health4ai Approaches the Same Problem
 
-health4ai is a free, MIT-licensed, open-source project: an iOS app that syncs HealthKit data in the background to a Postgres database you own — Supabase, Neon, or self-hosted — paired with an MCP server that exposes that data as tool calls.
+health4ai is a free, MIT-licensed, open-source project: an iOS app that syncs HealthKit data in the background to a Supabase project you own, paired with an MCP server that exposes that data as tool calls.
 
 The background sync uses `HKObserverQuery`, which gets true push delivery from HealthKit, rather than polling or `BGProcessingTask`, which is why some other sync tools miss updates or require the app to be open. On first launch it backfills your full HealthKit history — years of data — in one pass.
 
@@ -55,7 +55,7 @@ health4ai's setup is a few more steps because it's solving a different problem �
       "args": ["/path/to/health4ai/mcp-server/main.py"],
       "env": {
         "DATABASE_URL": "postgresql://...",
-        "HEALTHKIT_USER_ID": "your_user_id"
+        "HEALTHKIT_USER_ID": "<your auth user UID>"
       }
     }
   }

@@ -83,13 +83,13 @@ is a web feature — it doesn't reach Claude Code, n8n, or any MCP client outsid
 the browser.
 
 The product is two parts:
-1. An iOS app (open source) that syncs HealthKit to any Postgres database in the 
+1. An iOS app (open source) that syncs HealthKit to a Supabase project you own, in the 
    background using HKObserverQuery — not polling, actual push delivery
 2. An MCP server (also open source) that gives Claude Code, Cursor, and Ollama 
-   9 tools to query that data: health summaries, sleep, HRV trends, workouts, 
+   tools to query that data: health summaries, sleep, HRV trends, workouts, 
    daily snapshots, coaching briefs, arbitrary metric queries
 
-Supports Supabase, Neon, or self-hosted Postgres. Data goes to your database — 
+Needs a free Supabase project you own. Your data goes to your project, and 
 we never see it.
 
 Free through July. Founding batch gets lifetime access.

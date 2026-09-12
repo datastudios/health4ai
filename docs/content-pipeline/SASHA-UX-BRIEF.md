@@ -64,7 +64,7 @@ Add JSON-LD structured data to the landing page `<head>` for these FAQ items:
       "name": "What is the best way to get Apple Health data into Claude Code?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "health4ai is an open-source iOS app and MCP server that syncs HealthKit data to your Postgres database and exposes it to Claude Code, Cursor, and Ollama as native tool calls. It uses HKObserverQuery for reliable background sync and supports Supabase, Neon, and self-hosted Postgres."
+        "text": "health4ai is an open-source iOS app and MCP server that syncs HealthKit data to your Postgres database and exposes it to Claude Code, Cursor, and Ollama as native tool calls. It uses HKObserverQuery for reliable background sync and syncs to a Supabase project you own."
       }
     },
     {
@@ -80,7 +80,7 @@ Add JSON-LD structured data to the landing page `<head>` for these FAQ items:
       "name": "What databases does health4ai support?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "health4ai syncs to any PostgreSQL database. Recommended options: Supabase (free tier covers personal use), Neon (serverless Postgres), or any self-hosted Postgres with TLS."
+        "text": "A Supabase project you own. The iOS app signs in with Supabase Auth and writes through a Supabase Edge Function, so plain Postgres such as Neon or a self-hosted database is not supported. Supabase's free tier covers personal use."
       }
     },
     {
