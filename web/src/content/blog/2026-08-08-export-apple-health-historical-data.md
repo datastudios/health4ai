@@ -5,6 +5,7 @@ pubDate: 2026-08-08
 slug: "export-apple-health-historical-data"
 tags: ["apple-health", "export", "historical-data", "healthkit", "backfill", "postgres"]
 draft: false
+legacySetup: true
 ---
 
 # How to Get 10 Years of Apple Health Data Out of Your iPhone

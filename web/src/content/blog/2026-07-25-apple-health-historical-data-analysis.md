@@ -5,6 +5,7 @@ pubDate: 2026-07-25
 slug: "apple-health-historical-data-analysis"
 tags: ["apple-health", "historical-data", "sql", "postgres", "healthkit", "long-term-trend", "analysis"]
 draft: false
+legacySetup: true
 ---
 
 # Querying 10 Years of Apple Health Data with SQL and AI

@@ -17,16 +17,12 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
   .card-a     { animation: float-up 4.8s ease-in-out infinite; }
   .card-b     { animation: float-up 4.8s ease-in-out infinite; animation-delay: 2.2s; }
   .cta-glow   { animation: glow-pulse 3s ease-in-out infinite; }
-  .tab-btn { padding: 6px 18px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,45,120,0.2); background: transparent; color: var(--muted); transition: all 0.2s; }
-  .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .tab-btn:hover:not(.active) { border-color: var(--accent); color: #fff; }
-  .code-block { background: #06070f; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px 24px; font-family: ui-monospace,'SF Mono',monospace; font-size: 0.8rem; line-height: 1.7; color: #c8d0e8; overflow-x: auto; }
+  .code-block { background: #06070f; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px 24px; font-family: ui-monospace,'SF Mono',monospace; font-size: 0.8rem; line-height: 1.7; color: #c8d0e8; overflow-x: auto; white-space: pre; margin: 0; }
   .code-block .cm  { color: #4a5580; }
   .code-block .kw  { color: #ff6b9d; }
   .code-block .str { color: #a8d8a0; }
   .code-block .num { color: #ffc97a; }
   /* Focus indicators — WCAG 2.1 2.4.7 */
-  .tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
   button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   /* Waitlist forms. DOM order is email -> consent -> submit so that Tab and
@@ -104,7 +100,7 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
       "name": "What is the best way to get Apple Health data into Claude Code?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "health4ai is an open-source iOS app and MCP server that syncs HealthKit data to your Postgres database and exposes it to Claude Code, Cursor, and Ollama as native tool calls. It uses HKObserverQuery for reliable background sync and supports Supabase, Neon, and self-hosted Postgres."
+        "text": "health4ai is an open-source iOS app and MCP server that syncs HealthKit data to a Supabase project you own and exposes it to Claude Code, Cursor, and Ollama as native tool calls. It uses HKObserverQuery for reliable background sync."
       }
     },
     {
@@ -120,7 +116,7 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
       "name": "What databases does health4ai support?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "health4ai syncs to any PostgreSQL database. Recommended: Supabase (free tier covers personal use), Neon (serverless Postgres), or any self-hosted Postgres with TLS."
+        "text": "A Supabase project you own. The iOS app signs in with Supabase Auth and writes through a Supabase Edge Function, so plain Postgres such as Neon or a self-hosted database is not supported. Supabase's free tier covers personal use."
       }
     },
     {
@@ -239,14 +235,4 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
     await submitWaitlist(document.getElementById('email-input-2').value, document.getElementById('form-status-2'), 'bottom', 'hp-2', 'tf-consent-2');
   });
 
-  // Backend tabs
-  document.getElementById('backend-tabs')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('.tab-btn');
-    if (!btn) return;
-    const tab = btn.dataset.tab;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-    document.querySelectorAll('.backend-content').forEach(c => {
-      c.hidden = c.id !== `tab-${tab}`;
-    });
-  });
 </script>

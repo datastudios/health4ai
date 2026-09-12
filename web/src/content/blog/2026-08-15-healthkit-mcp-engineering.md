@@ -5,6 +5,7 @@ pubDate: 2026-08-15
 slug: "healthkit-mcp-engineering"
 tags: ["engineering", "healthkit", "mcp", "ios", "architecture", "hkobserverquery", "postgres"]
 draft: false
+legacySetup: true
 ---
 
 # From HealthKit to Claude: An Engineering Journey

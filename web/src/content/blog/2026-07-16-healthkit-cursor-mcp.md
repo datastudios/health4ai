@@ -5,6 +5,7 @@ pubDate: 2026-07-16
 slug: "healthkit-cursor-mcp"
 tags: ["cursor", "mcp", "healthkit", "apple-health", "tutorial", "health-data"]
 draft: false
+legacySetup: true
 ---
 
 # Using health4ai with Cursor for Health Data Analysis

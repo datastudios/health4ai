@@ -5,6 +5,7 @@ pubDate: 2026-08-29
 slug: "open-source-apple-health-mcp"
 tags: ["open-source", "mcp", "apple-health", "healthkit", "privacy", "community"]
 draft: false
+legacySetup: true
 ---
 
 # Why I Open-Sourced My Apple Health MCP Server

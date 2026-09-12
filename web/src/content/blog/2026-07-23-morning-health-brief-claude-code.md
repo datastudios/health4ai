@@ -5,6 +5,7 @@ pubDate: 2026-07-23
 slug: "morning-health-brief-claude-code"
 tags: ["automation", "apple-health", "claude-code", "mcp", "healthkit", "morning-routine", "hrv"]
 draft: false
+legacySetup: true
 ---
 
 # Automating a Morning Health Brief with Claude Code and Apple Health

@@ -5,6 +5,7 @@ pubDate: 2026-06-23
 slug: "apple-health-mcp-server"
 tags: ["apple-health", "mcp", "claude-code", "healthkit", "supabase"]
 draft: false
+legacySetup: true
 ---
 
 # Apple Health MCP Server: Connecting HealthKit to Claude Code

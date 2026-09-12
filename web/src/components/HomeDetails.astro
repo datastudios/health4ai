@@ -55,33 +55,22 @@
   <div class="max-w-6xl mx-auto">
     <div class="max-w-2xl mb-12">
       <div class="text-xs font-semibold uppercase tracking-widest mb-4" style="color:var(--accent)">Your database, your rules</div>
-      <h2 class="text-3xl font-extrabold tracking-tight text-white mb-4">Set up in two commands.<br>Own your data forever.</h2>
+      <h2 class="text-3xl font-extrabold tracking-tight text-white mb-4">Set up once.<br>Own your data forever.</h2>
       <p style="color:var(--muted)" class="text-base leading-relaxed">
-        health4.ai syncs to any Postgres — Supabase, Neon, or a Docker container on your laptop. Run the schema, add your connection string to the iOS app, done. No subscriptions, no black-box cloud, no lock-in.
+        health4.ai syncs to a Supabase project you create and own. Run the schema, deploy one Edge Function, sign in from the iOS app. No subscriptions, no health4.ai server, no lock-in.
       </p>
     </div>
 
-    <!-- Tab buttons -->
-    <div class="flex flex-wrap gap-2 mb-6" id="backend-tabs">
-      <button class="tab-btn active" data-tab="supabase">Supabase <span class="text-[10px] ml-1 opacity-70">recommended</span></button>
-      <button class="tab-btn" data-tab="neon">Neon</button>
-      <button class="tab-btn" data-tab="local">Local / Docker</button>
-    </div>
-
-    <!-- Supabase -->
-    <div id="tab-supabase" class="backend-content">
       <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        <div class="code-block">
-<span class="cm"># 1. Create a free project at supabase.com</span>
-<span class="cm">#    Settings → Database → Connection string → URI</span>
+        <pre class="code-block"><code><span class="cm"># 1. Create a free project at supabase.com, then in its</span>
+<span class="cm">#    SQL editor run https://health4.ai/schema.sql</span>
 
-<span class="cm"># 2. Run the health4ai schema</span>
-<span class="kw">psql</span> <span class="str">"$SUPABASE_DB_URL"</span> \
-  &lt; <span class="str">https://health4.ai/schema.sql</span>
+<span class="cm"># 2. Deploy the ingest function (Supabase CLI)</span>
+<span class="kw">supabase</span> functions deploy healthkit-ingest \
+  --project-ref <span class="str">&lt;ref&gt;</span> --no-verify-jwt
 
-<span class="cm"># 3. Paste your Supabase URL + anon key</span>
-<span class="cm">#    into the iOS app — sync starts automatically.</span>
-        </div>
+<span class="cm"># 3. Authentication → Users → add yourself, then sign</span>
+<span class="cm">#    in from the iOS app with your URL + anon key.</span></code></pre>
         <div class="rounded-xl p-5 space-y-3" style="background:rgba(15,18,37,0.7);border:1px solid var(--border)">
           <div class="text-sm font-bold text-white mb-1">Why Supabase</div>
           {[['Free tier','500 MB storage, no credit card'],['Hosted Postgres','No server to maintain'],['Row-level security','Built-in RLS — your data stays yours'],['Dashboard','Query your health data in a web UI']].map(([k,v])=>(
@@ -92,66 +81,9 @@
           ))}
         </div>
       </div>
-    </div>
-
-    <!-- Neon -->
-    <div id="tab-neon" class="backend-content" hidden>
-      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        <div class="code-block">
-<span class="cm"># 1. Create a free project at neon.tech</span>
-<span class="cm">#    Dashboard → Connection Details → copy URI</span>
-
-<span class="cm"># 2. Run the health4ai schema</span>
-<span class="kw">psql</span> <span class="str">"$NEON_DATABASE_URL"</span> \
-  &lt; <span class="str">https://health4.ai/schema.sql</span>
-
-<span class="cm"># 3. Paste your Neon connection string</span>
-<span class="cm">#    into the iOS app settings.</span>
-        </div>
-        <div class="rounded-xl p-5 space-y-3" style="background:rgba(15,18,37,0.7);border:1px solid var(--border)">
-          <div class="text-sm font-bold text-white mb-1">Why Neon</div>
-          {[['Serverless','Scales to zero — no idle cost'],['Branching','Clone your DB in seconds for testing'],['Free tier','3 GB storage, always free'],['Pure Postgres','100% compatible, no surprises']].map(([k,v])=>(
-            <div class="flex gap-3 text-xs">
-              <span style="color:var(--accent)">✓</span>
-              <span><span class="text-white font-medium">{k}</span> <span style="color:var(--muted)">— {v}</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-
-    <!-- Local -->
-    <div id="tab-local" class="backend-content" hidden>
-      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
-        <div class="code-block">
-<span class="cm"># Start Postgres with Docker</span>
-<span class="kw">docker</span> run -d --name health4ai-db \
-  -e POSTGRES_PASSWORD=<span class="str">yourpassword</span> \
-  -p 5432:5432 postgres:16-alpine
-
-<span class="cm"># Run the schema</span>
-<span class="kw">psql</span> -h localhost -U postgres \
-  &lt; <span class="str">https://health4.ai/schema.sql</span>
-
-<span class="cm"># Expose to iOS (pick one):</span>
-<span class="cm">#   Tailscale: automatic, zero config</span>
-<span class="cm">#   ngrok:  ngrok tcp 5432</span>
-<span class="cm">#   Cloudflare: cloudflared access tcp</span>
-        </div>
-        <div class="rounded-xl p-5 space-y-3" style="background:rgba(15,18,37,0.7);border:1px solid var(--border)">
-          <div class="text-sm font-bold text-white mb-1">Why local</div>
-          {[['Full control','Your data never leaves your machine'],['Zero cost','Postgres is free, Docker is free'],['Air-gapped option','Works without any cloud dependency'],['Power user','Extend the schema however you want']].map(([k,v])=>(
-            <div class="flex gap-3 text-xs">
-              <span style="color:var(--accent)">✓</span>
-              <span><span class="text-white font-medium">{k}</span> <span style="color:var(--muted)">— {v}</span></span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
 
     <p class="mt-5 text-xs" style="color:var(--muted)">
-      Schema file: <a href="/schema.sql" class="hover:text-white transition-colors" style="color:var(--accent)">health4.ai/schema.sql</a> · Compatible with any Postgres 14+
+      Schema file: <a href="/schema.sql" class="hover:text-white transition-colors" style="color:var(--accent)">health4.ai/schema.sql</a> · Supabase only
     </p>
   </div>
 </section>
@@ -163,7 +95,7 @@
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
       {[
         { n:'01', title:'Install the iOS app', body:'Tap to authorize HealthKit. Background sync starts immediately — HKObserverQuery + BGProcessingTask push every new sample as it arrives, without opening the app.', icon:'📱' },
-        { n:'02', title:'Connect your database', body:'Point the app at your Postgres: Supabase, Neon, or a local Docker container. Run the schema once. Your decade of health history lands on day one.', icon:'🗄️' },
+        { n:'02', title:'Connect your database', body:'Create a Supabase project you own, run the schema, deploy the ingest function. Your decade of health history lands on day one.', icon:'🗄️' },
         { n:'03', title:'Ask your AI anything', body:'Add one line to your Claude Desktop or Cursor config. Then ask: "How\'s my sleep debt this week?" "When was my HRV last above 70?" "Am I ready to train tomorrow?"', icon:'🤖' },
       ].map(({ n, title, body, icon }) => (
         <div class="rounded-2xl p-6 flex flex-col" style="background:rgba(15,18,37,0.6);border:1px solid rgba(255,255,255,0.07)">
@@ -188,7 +120,7 @@
         { title:'Works with every AI — not just claude.ai', detail:"Claude's native Apple Health connector only works on claude.ai web. health4.ai also works with Claude Code, the Claude API, ChatGPT, Cursor, and any tool that supports MCP." },
         { title:'A decade of history, queryable in seconds', detail:'The iOS app backfills your full Apple Health archive on first sync — every step, heartbeat, and workout going back to when you first wore a wearable.' },
         { title:'Background sync — nothing to export', detail:'HKObserverQuery fires the moment Apple Health gets a new sample. Your AI always has fresh data without you doing anything.' },
-        { title:'Private by design — you own the database', detail:"Your health data syncs to a Postgres database you control. We don't store a copy, sell it, or have access to it. GDPR-friendly by construction." },
+        { title:'Private by design — you own the database', detail:"Your health data syncs to a Supabase project you control. We don't store a copy, sell it, or have access to it. GDPR-friendly by construction." },
       ].map(({ title, detail }) => (
         <div class="flex gap-4 rounded-2xl p-5" style="background:rgba(15,18,37,0.5);border:1px solid rgba(255,255,255,0.06)">
           <div class="mt-0.5 flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center" style="background:rgba(255,45,120,0.15)">

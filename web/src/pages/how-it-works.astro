@@ -35,24 +35,27 @@ import Layout from '../layouts/Layout.astro';
         <!-- Step 1 -->
         <div class="flex gap-5">
           <div class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center text-green-400 font-bold text-sm">1</div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="text-white font-semibold mb-2">Create a free Supabase project</h3>
             <p class="text-neutral-400 text-sm leading-relaxed mb-3">
-              Go to <a href="https://supabase.com" class="text-green-400 hover:underline" target="_blank" rel="noopener">supabase.com</a> and create a free project. Then run the health4.ai schema against it — this creates the two tables the app writes to:
+              Go to <a href="https://supabase.com" class="text-green-400 hover:underline" target="_blank" rel="noopener">supabase.com</a> and create a free project. Open its SQL editor and run the health4.ai schema (tables, row-level security, grants), then deploy the ingest function and add the user you will sign in as:
             </p>
-            <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code># From Settings → Database → Connection String → URI
-psql "$SUPABASE_DB_URL" &lt; https://health4.ai/schema.sql</code></pre>
-            <p class="text-neutral-500 text-xs mt-2">Or use any Postgres 14+ — Neon, local Docker, self-hosted. <a href="/schema.sql" class="text-green-400 hover:underline">Download schema.sql</a></p>
+            <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code># 1. SQL editor → run https://health4.ai/schema.sql
+# 2. Deploy the ingest function (Supabase CLI):
+supabase functions deploy healthkit-ingest \
+  --project-ref &lt;ref&gt; --no-verify-jwt
+# 3. Authentication → Users → add the user you will sign in as</code></pre>
+            <p class="text-neutral-500 text-xs mt-2">Supabase only: the app signs in with Supabase Auth and writes through a Supabase Edge Function. <a href="/schema.sql" class="text-green-400 hover:underline">Download schema.sql</a> · <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" class="text-green-400 hover:underline">Full setup guide</a></p>
           </div>
         </div>
 
         <!-- Step 2 -->
         <div class="flex gap-5">
           <div class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center text-green-400 font-bold text-sm">2</div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="text-white font-semibold mb-2">Install the iOS app and connect your database</h3>
             <p class="text-neutral-400 text-sm leading-relaxed mb-3">
-              Download health4.ai from the App Store. Tap through the Welcome and Privacy screens, then open the <strong class="text-neutral-300">Connect</strong> tab. Select <strong class="text-neutral-300">Supabase</strong>, paste your project URL and anon key, then tap <strong class="text-neutral-300">Sign In</strong>.
+              Download health4.ai from the App Store. Tap through the Welcome and Privacy screens, then open the <strong class="text-neutral-300">Connect</strong> tab. If asked for a backend, choose <strong class="text-neutral-300">Supabase</strong>. Paste your project URL and anon key, then tap <strong class="text-neutral-300">Sign In</strong> as the user you added.
             </p>
             <div class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 text-xs text-neutral-400 space-y-1">
               <div><span class="text-neutral-500">Project URL:</span> <code class="text-green-300">https://abc123.supabase.co</code> — Settings → API</div>
@@ -64,7 +67,7 @@ psql "$SUPABASE_DB_URL" &lt; https://health4.ai/schema.sql</code></pre>
         <!-- Step 3 -->
         <div class="flex gap-5">
           <div class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center text-green-400 font-bold text-sm">3</div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="text-white font-semibold mb-2">Grant HealthKit access — sync begins</h3>
             <p class="text-neutral-400 text-sm leading-relaxed">
               Tap <strong class="text-neutral-300">Allow Health Access</strong> during onboarding. iOS shows the standard HealthKit permission sheet — you choose which types to share. The app immediately begins a full historical backfill (your entire Apple Health archive), then switches to live incremental sync via <code class="text-green-300 bg-neutral-900 px-1 rounded text-xs">HKObserverQuery</code> — iOS wakes the app in the background whenever new data arrives.
@@ -75,7 +78,7 @@ psql "$SUPABASE_DB_URL" &lt; https://health4.ai/schema.sql</code></pre>
         <!-- Step 4 -->
         <div class="flex gap-5">
           <div class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center text-green-400 font-bold text-sm">4</div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="text-white font-semibold mb-2">Run the MCP server on your Mac</h3>
             <p class="text-neutral-400 text-sm leading-relaxed mb-3">
               Clone the repo and configure the server with your Supabase credentials:
@@ -91,7 +94,7 @@ cp .env.example .env
         <!-- Step 5 -->
         <div class="flex gap-5">
           <div class="flex-shrink-0 w-8 h-8 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center text-green-400 font-bold text-sm">5</div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="text-white font-semibold mb-2">Add to your AI client</h3>
             <p class="text-neutral-400 text-sm leading-relaxed mb-3">
               Add one block to your AI's MCP config. Works with Claude Desktop, Cursor, Continue, and any MCP-compatible client:
@@ -110,7 +113,7 @@ cp .env.example .env
         <!-- Step 6 -->
         <div class="flex gap-5">
           <div class="flex-shrink-0 w-8 h-8 rounded-full bg-pink-500/15 border border-pink-500/30 flex items-center justify-center text-pink-400 font-bold text-sm">✓</div>
-          <div>
+          <div class="min-w-0 flex-1">
             <h3 class="text-white font-semibold mb-2">Ask your AI about your health</h3>
             <p class="text-neutral-400 text-sm leading-relaxed mb-3">
               Once the backfill completes (usually 2–10 minutes depending on your history), go to your AI and ask:
@@ -145,7 +148,7 @@ cp .env.example .env
             <span class="text-neutral-600 group-open:rotate-180 transition-transform">▾</span>
           </summary>
           <p class="px-5 pb-4 text-neutral-400 text-sm leading-relaxed border-t border-neutral-800 pt-4">
-            Yes. In the app's <strong class="text-neutral-300">Connect</strong> tab, switch to <strong class="text-neutral-300">REST / Webhook</strong> and enter any HTTPS endpoint that accepts JSON POST requests. For Neon or self-hosted Postgres, point the endpoint at a lightweight ingest function you deploy. The <a href="/schema.sql" class="text-green-400 hover:underline">schema.sql</a> is compatible with any Postgres 14+.
+            No. The iOS app signs in with Supabase Auth and sends data to a Supabase Edge Function, so it needs a Supabase project you own. Neon, local Docker and other plain Postgres hosts have no way to receive data from the app. <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" class="text-green-400 hover:underline">Full setup guide</a>
           </p>
         </details>
 
@@ -188,15 +191,15 @@ cp .env.example .env
       <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 text-xs text-green-300 leading-relaxed overflow-x-auto">iPhone (health4.ai iOS app)
   └─ HKObserverQuery ──► fires on every new HealthKit sample
   └─ BGProcessingTask ──► runs full sync while charging
-         │  POST /rest/v1/healthkit_metrics  (Supabase PostgREST)
+         │  POST /functions/v1/healthkit-ingest  (your Edge Function)
          ▼
   Your Supabase project (you own this — health4.ai has no access)
   ├── healthkit_metrics          (raw samples, 30-day rolling window)
   └── healthkit_daily_summaries  (pre-aggregated, multi-year)
-         │  read via PostgREST
+         │  read over a direct Postgres connection
          ▼
   health4ai MCP server (local stdio, runs on your Mac)
-  11 tools: get_sleep · get_hrv_trend · get_workouts · get_daily_snapshot
+  tools: get_sleep · get_hrv_trend · get_workouts · get_daily_snapshot
             query_metric · get_health_summary · get_long_term_trend
             search_records · get_metric_stats · compare_periods
             get_coaching_brief

@@ -5,6 +5,7 @@ pubDate: 2026-09-12
 slug: "healthkit-n8n-beginners"
 tags: ["n8n", "healthkit", "apple-health", "automation", "workflow", "tutorial", "beginners"]
 draft: false
+legacySetup: true
 ---
 
 # HealthKit Integration for n8n Beginners

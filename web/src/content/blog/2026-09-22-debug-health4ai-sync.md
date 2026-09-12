@@ -5,6 +5,7 @@ pubDate: 2026-09-22
 slug: "debug-health4ai-sync"
 tags: ["debugging", "sync", "healthkit", "mcp", "troubleshooting", "setup", "health4ai"]
 draft: false
+legacySetup: true
 ---
 
 # How to Debug Your health4ai Sync Setup

@@ -5,6 +5,7 @@ pubDate: 2026-08-06
 slug: "wearables-llm-integration"
 tags: ["wearables", "llm", "healthkit", "apple-watch", "oura", "garmin", "mcp", "integration"]
 draft: false
+legacySetup: true
 ---
 
 # Connecting Wearables to LLMs: A Developer Guide

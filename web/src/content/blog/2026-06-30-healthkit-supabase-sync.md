@@ -115,27 +115,25 @@ The composite `(user_id, metric_type, started_at DESC)` index means queries like
 
 In Supabase, the free tier (500MB database) handles personal data volumes comfortably. The daily summaries table keeps the raw table from growing indefinitely — samples older than 30 days are aggregated and the originals can be pruned.
 
-## Running the Schema
+## Setting Up Your Project
+
+> **Updated September 12, 2026.** This section used to have you pipe a schema file into `psql` and point the app at a connection string. That setup could not sync: the app writes through a Supabase Edge Function, which it never deployed. The steps below are the ones that work.
+
+In a Supabase project you own:
+
+1. Open the **SQL editor** and run [health4.ai/schema.sql](https://health4.ai/schema.sql). It creates the tables, turns on row-level security, and removes direct client access.
+2. Deploy the ingest function with the Supabase CLI:
 
 ```bash
-psql "$DATABASE_URL" < web/public/schema.sql
+supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no-verify-jwt
 ```
 
-That single command creates both tables, all three indexes, and a unified view (`v_healthkit_daily_quantity`) that unions raw and summary data. For Supabase specifically, you can also apply it via the Management API if your connection string doesn't have direct psql access:
+3. Under **Authentication → Users**, add the user you will sign in as. The app signs in; it does not sign up.
+4. In the app, enter your Project URL and anon key, then sign in as that user.
 
-```bash
-export SUPABASE_PAT="sbp_your_personal_access_token"
-PROJECT_REF="your_project_ref"
+The full walkthrough is [How to Set Up health4ai with Supabase](/blog/healthkit-supabase-setup).
 
-curl -X POST \
-  "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
-  -H "Authorization: Bearer $SUPABASE_PAT" \
-  -H "Content-Type: application/json" \
-  -H "User-Agent: health4ai-setup" \
-  -d @- < <(jq -Rs '{query: .}' < web/public/schema.sql)
-```
-
-Once the schema is in place and the iOS app is configured with your connection string, the sync starts immediately. The first backfill runs in the background — the app's Home screen shows a progress indicator with the record count and how far back it's reached. After that, `HKObserverQuery` keeps it current automatically.
+Once you are signed in, the first backfill runs, and the app's Home screen shows its progress with the record count and how far back it has reached. After that, `HKObserverQuery` keeps it current automatically.
 
 ---
 

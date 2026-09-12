@@ -5,6 +5,7 @@ pubDate: 2026-07-28
 slug: "apple-health-private-ai"
 tags: ["privacy", "apple-health", "healthkit", "postgres", "supabase", "architecture", "data-ownership"]
 draft: false
+legacySetup: true
 ---
 
 # Apple Health Privacy-First AI Integration: Your Data Never Leaves Your Database

@@ -5,6 +5,7 @@ pubDate: 2026-06-23
 slug: "claude-connector-developer-gap"
 tags: ["claude-code", "apple-health", "mcp", "anthropic", "healthkit", "developer"]
 draft: false
+legacySetup: true
 ---
 
 # Why Claude's Apple Health Connector Doesn't Work for Developers

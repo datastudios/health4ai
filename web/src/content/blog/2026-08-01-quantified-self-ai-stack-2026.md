@@ -5,6 +5,7 @@ pubDate: 2026-08-01
 slug: "quantified-self-ai-stack-2026"
 tags: ["quantified-self", "apple-watch", "healthkit", "ai-stack", "mcp", "2026", "wearables"]
 draft: false
+legacySetup: true
 ---
 
 # The Quantified Self Stack in 2026: Hardware, Apps, and AI

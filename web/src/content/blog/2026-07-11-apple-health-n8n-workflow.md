@@ -5,6 +5,7 @@ pubDate: 2026-07-11
 slug: "apple-health-n8n-workflow"
 tags: ["n8n", "apple-health", "automation", "healthkit", "mcp", "claude", "workflow"]
 draft: false
+legacySetup: true
 ---
 
 # Building a Weekly Health Review Workflow with n8n and health4ai

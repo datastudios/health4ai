@@ -110,7 +110,7 @@ import Layout from '../layouts/Layout.astro';
         Health Auto Export's MCP server opens a local TCP port on your iPhone and expects Claude Code (or another MCP client) to connect directly across your LAN. That works fine when your Mac and your phone are on the same home network — but Claude Code runs on your laptop, your laptop travels, and your phone doesn't always follow. The moment you open a terminal at a coffee shop or in the office, the MCP server is unreachable and your agent loses all health context.
       </p>
       <p class="text-neutral-400 text-sm leading-relaxed">
-        health4.ai syncs your Apple Health data to a Postgres database you control — Supabase, Neon, or a local Docker container. The MCP server connects to your database over HTTPS from anywhere with an internet connection.
+        health4.ai syncs your Apple Health data to a Supabase project you control. The MCP server connects to that database from anywhere with an internet connection.
       </p>
     </section>
 

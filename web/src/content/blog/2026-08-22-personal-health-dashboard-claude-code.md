@@ -5,6 +5,7 @@ pubDate: 2026-08-22
 slug: "personal-health-dashboard-claude-code"
 tags: ["dashboard", "apple-health", "claude-code", "mcp", "healthkit", "health-data", "tutorial"]
 draft: false
+legacySetup: true
 ---
 
 # Using health4ai to Build a Personal Health Dashboard

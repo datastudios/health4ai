@@ -39,6 +39,11 @@ function formatDate(d: Date) {
   .prose li { margin-bottom: 0.35rem; }
   .prose pre { background: #06070f; border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 18px 22px; margin: 1.4rem 0; overflow-x: auto; font-family: ui-monospace,'SF Mono',monospace; font-size: 0.8rem; line-height: 1.7; color: #c8d0e8; }
   .prose code { font-family: ui-monospace,'SF Mono',monospace; font-size: 0.82rem; background: rgba(255,255,255,0.06); border-radius: 4px; padding: 2px 5px; color: #e2c8d4; }
+  /* Rendered markdown does not carry Astro's scoping attribute, so rules meant for it must be
+     :global. Without this, long code-block lines widened the whole page on phones (measured 335-555px
+     at 320px wide) instead of scrolling inside their own box. */
+  .prose :global(pre) { overflow-x: auto; max-width: 100%; }
+  .prose :global(:not(pre) > code) { overflow-wrap: anywhere; }
   .prose pre code { background: transparent; padding: 0; border-radius: 0; color: inherit; }
   .prose strong { color: #e2e8f0; font-weight: 600; }
   .prose blockquote { border-left: 3px solid rgba(255,45,120,0.4); padding-left: 1rem; margin: 1.4rem 0; color: #718096; font-style: italic; }
@@ -85,6 +90,14 @@ function formatDate(d: Date) {
     <h1 class="text-2xl sm:text-3xl font-bold text-white leading-snug">{post.data.title}</h1>
   </div>
 
+  {post.data.legacySetup && (
+    <aside role="note" class="mb-8 rounded-lg border border-neutral-700 bg-neutral-900/60 px-4 py-3 text-sm leading-relaxed text-neutral-300">
+      <strong class="text-white">This post describes an older setup.</strong>{' '}
+      health4.ai now syncs only to a Supabase project you own: run the schema, deploy the ingest function, and sign in from the app.
+      Neon, local Docker and the app's REST&nbsp;/&nbsp;Webhook option do not sync data.{' '}
+      <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" class="underline underline-offset-2 hover:text-white">Read the current setup guide</a>.
+    </aside>
+  )}
   <article class="prose">
     <Content />
   </article>

@@ -4,11 +4,11 @@
 
 ## What Is health4.ai?
 
-health4.ai bridges the gap between Apple HealthKit and AI tools. Download the iOS app, authorize HealthKit, and your health data becomes available as native tool calls to any AI agent. No same-WiFi requirement. Works from anywhere.
+health4.ai bridges the gap between Apple HealthKit and AI tools. Download the iOS app, connect it to a Supabase project you own, authorize HealthKit, and your health data becomes available as native tool calls to any AI agent. No same-WiFi requirement. Works from anywhere.
 
 ## Why It Exists
 
-Apple has no server-side HealthKit API. Existing tools (Health Auto Export) only work over local WiFi and have unreliable background sync. health4.ai uses HKObserverQuery + BGProcessingTask for reliable background delivery and stores data privately in the cloud for remote access.
+Apple has no server-side HealthKit API. Existing tools (Health Auto Export) only work over local WiFi and have unreliable background sync. health4.ai uses HKObserverQuery + BGProcessingTask for reliable background delivery and stores data in a Supabase project you own, reachable from anywhere. health4.ai runs no server and never receives it.
 
 ## MCP Tools (FastMCP, Python)
 
@@ -31,7 +31,7 @@ Apple has no server-side HealthKit API. Existing tools (Health Auto Export) only
 ## vs. Health Auto Export
 
 Health Auto Export: closed source, $30 one-time, MCP requires same-WiFi TCP connection.
-health4.ai: Free download, cloud storage (any network), no setup required.
+health4.ai: Free download, open source, works from any network. You set up your own Supabase project once.
 
 ## vs. claude.ai native Apple Health connector
 
@@ -48,15 +48,15 @@ All HKSampleTypes dynamically: steps, heart rate, HRV (SDNN), resting heart rate
 
 ## Architecture
 
-iPhone (HKObserverQuery + BGProcessingTask) → Cloud database → MCP server (FastMCP, Python) → Claude Code / any MCP client
+iPhone (HKObserverQuery + BGProcessingTask) → your Supabase project (healthkit-ingest Edge Function) → MCP server (FastMCP, Python) → Claude Code / any MCP client
 
-Raw samples retained 180 days. Beyond 180 days, get_long_term_trend transparently falls back to pre-aggregated daily summaries — callers do not need to handle this.
+Queries within the last 30 days read raw samples; longer windows read pre-aggregated daily summaries where they exist. Callers do not need to handle this.
 
 ## Pages
 
 - Home: https://health4.ai/
 - Compare: https://health4.ai/compare (vs. Health Auto Export, claude.ai, VitalTrends)
-- MCP Tools Reference: https://health4.ai/mcp-tools (all 8 tools with signatures and examples)
+- MCP Tools Reference: https://health4.ai/mcp-tools (tool signatures and examples)
 - How It Works: https://health4.ai/how-it-works (architecture, data model, sync mechanism)
 - Privacy Policy: https://health4.ai/privacy
 - Terms of Service: https://health4.ai/terms

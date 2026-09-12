@@ -5,6 +5,7 @@ pubDate: 2026-07-21
 slug: "apple-health-ollama-local"
 tags: ["ollama", "local-ai", "healthkit", "apple-health", "mcp", "privacy", "llama"]
 draft: false
+legacySetup: true
 ---
 
 # Running health4ai Locally with Ollama — Zero Cloud Required

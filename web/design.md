@@ -34,16 +34,25 @@ classes, clipping and alternate text.
 
 ## Preserve behavior and meaning
 
-Keep copy, disclaimers, links, tab behavior, analytics hooks and waitlist scripts
+Keep copy, disclaimers, links, analytics hooks and waitlist scripts
 unchanged. Both waitlists retain unchecked, explicit Apple/TestFlight consent,
 email → consent → submit order, and duplicate-signup messaging. No real signup
 may be created during verification; intercept the request in tests.
+
+## Legacy-setup notice
+
+Blog posts written before the 2026-09-12 setup correction set `legacySetup: true` in their
+frontmatter, which renders an `<aside role="note">` above the article: neutral-700 border,
+neutral-900/60 fill, neutral-300 text, underlined link. It is set per post and never
+inherited, so new posts do not get it. Keep an explicit `{' '}` at tag boundaries inside it:
+the build drops line-break whitespace there, and the notice rendered "written.health4.ai"
+until that was added.
 
 ## Verification
 
 Normal builds run emitted-output performance and mocked-form tests. Review the
 375px and 1440px renders for preserved hierarchy, wrapping, logo fidelity and
-control visibility. Browser-check the actual form and tabs separately from the
+control visibility. Browser-check the actual form separately from the
 source comparison. Independent code review and Sasha's rendered gate are required
 before merge. Publication requires separate approval.
 

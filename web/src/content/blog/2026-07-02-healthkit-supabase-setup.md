@@ -1,91 +1,73 @@
 ---
-title: "How to Set Up health4ai with Supabase in 10 Minutes"
-description: "Step-by-step: create a Supabase project, run the schema, configure the iOS app, and start querying your Apple Health data in Claude Code."
+title: "How to Set Up health4ai with Supabase"
+description: "Step by step: create a Supabase project, run the schema, deploy the ingest function, connect the iOS app, and query your Apple Health data from Claude Code."
 pubDate: 2026-06-23
 slug: "healthkit-supabase-setup"
 tags: ["apple-health", "supabase", "setup", "healthkit", "mcp", "tutorial"]
 draft: false
 ---
 
-# How to Set Up health4ai with Supabase in 10 Minutes
+# How to Set Up health4ai with Supabase
 
-This is the complete setup walkthrough for health4ai with Supabase as your database backend. Supabase is the recommended option — their free tier covers personal use indefinitely, and the managed Postgres instance means you're not running another daemon locally.
+This is the complete setup for health4ai. You need a Supabase project you own. The iOS app signs in with Supabase Auth and writes through a Supabase Edge Function, so Supabase is the only supported backend. health4ai itself runs no server and never receives your data.
 
-By the end of this you'll have your Apple Health data syncing to Postgres and queryable from Claude Code.
+> **Updated September 12, 2026.** An earlier version of this post had you run a different schema, skip the ingest function, and set `HEALTHKIT_USER_ID` to any string. That setup could not sync data. The schema and ingest function below were verified end to end on a fresh local Supabase stack before this update was published.
 
-## What You Need Before Starting
+## What you need
 
-- An iPhone running iOS 17 or later with Apple Watch data (or Health app data from any source)
-- Xcode installed on your Mac (for the iOS app build)
-- Claude Code or Claude Desktop installed
-- About 10 minutes
+- A free [Supabase](https://supabase.com) account
+- The [Supabase CLI](https://supabase.com/docs/guides/cli), logged in
+- Python for the MCP server
+- health4ai on your iPhone
 
-## Step 1: Create a Supabase Project
+## Step 1: Create the project and run the schema
 
-Go to [supabase.com](https://supabase.com) and create a new project. The free tier gives you a Postgres instance, connection pooling, and enough storage for years of health data. Pick any region — your iPhone will be sending data over TLS regardless.
+Create a new Supabase project. When it is ready, open its **SQL editor**, paste the contents of [health4.ai/schema.sql](https://health4.ai/schema.sql), and run it.
 
-Once the project is provisioned, go to **Settings → Database → Connection string** and copy the URI. It looks like:
+That file creates the tables, turns on row-level security, and removes direct client access. Health rows can only be written through the ingest function in the next step.
 
-```
-postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres
-```
+Don't use `supabase db push` for this. The numbered migrations in the repository are the history of one long-lived project and fail on a fresh one.
 
-That's your `DATABASE_URL`. Keep it handy for the next steps.
-
-## Step 2: Run the Schema
-
-Clone the health4ai repository and run the schema against your Supabase instance:
+## Step 2: Deploy the ingest function
 
 ```bash
-git clone https://github.com/health4ai/health4ai
+git clone https://github.com/jefflitt1/health4ai.git
 cd health4ai
-psql "$DATABASE_URL" < web/public/schema.sql
+supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no-verify-jwt
 ```
 
-This creates the `healthkit_metrics` table (raw samples) and `healthkit_daily_summaries` table (pre-aggregated historical data), plus indexes. The schema is straightforward — no proprietary extensions, just standard Postgres.
+Your project ref is the id in your project URL (`https://<ref>.supabase.co`). The `--no-verify-jwt` flag is intentional: the function checks the signed-in user's token itself and writes rows only under that user's ID.
 
-If `psql` isn't installed locally and you'd rather use the Supabase Management API:
+## Step 3: Create your user
+
+The app signs in but does not sign up. In the dashboard, open **Authentication → Users**, add a user with an email and password, and copy that user's **UID**. You will need it in Step 5.
+
+## Step 4: Connect the iOS app
+
+In the app's **Connect** tab, enter your **Project URL** and **anon key**, both in your project's API settings. If the app asks you to choose a backend, choose Supabase. Sign in as the user from Step 3, tap **Test Connection**, then start the sync.
+
+The first sync backfills your Apple Health history, so give a large archive some time.
+
+## Step 5: Configure the MCP server
 
 ```bash
-export SUPABASE_PAT="sbp_your_personal_access_token"
-PROJECT_REF="your_project_ref"
-
-curl -X POST \
-  "https://api.supabase.com/v1/projects/$PROJECT_REF/database/query" \
-  -H "Authorization: Bearer $SUPABASE_PAT" \
-  -H "Content-Type: application/json" \
-  -H "User-Agent: health4ai-setup" \
-  -d @- < <(jq -Rs '{query: .}' < web/public/schema.sql)
+cp mcp-server/.env.example mcp-server/.env
+pip install -r mcp-server/requirements.txt
 ```
 
-Get your personal access token from Supabase → Account → Access Tokens. The project ref is the subdomain of your Supabase URL.
+Edit `mcp-server/.env`:
 
-## Step 3: Configure the MCP Server
-
-```bash
-cd mcp-server
-cp .env.example .env
+```env
+DATABASE_URL=postgresql://postgres.<project_ref>:<database_password>@<pooler_host>:6543/postgres
+HEALTHKIT_USER_ID=<the UID from Step 3>
 ```
 
-Open `.env` and add two values:
+Two details trip people up.
 
-```
-DATABASE_URL=postgresql://postgres:[password]@db.[project-ref].supabase.co:5432/postgres
-HEALTHKIT_USER_ID=your_user_id
-```
+- The password in `DATABASE_URL` is your **database password**. It is not the service_role key or the anon key.
+- `HEALTHKIT_USER_ID` must be the exact UID from Step 3. An email address or username will not match any rows.
 
-The `HEALTHKIT_USER_ID` is any string you choose — it namespaces your data in the database. Use something like your name or "jeff". Then install dependencies and run a quick test:
-
-```bash
-pip install -r requirements.txt
-python main.py
-```
-
-If it starts without errors, the database connection is working.
-
-## Step 4: Add to Claude Code
-
-Add the MCP server to your `claude_desktop_config.json`:
+## Step 6: Add it to Claude Code
 
 ```json
 {
@@ -95,56 +77,21 @@ Add the MCP server to your `claude_desktop_config.json`:
       "args": ["/path/to/health4ai/mcp-server/main.py"],
       "env": {
         "DATABASE_URL": "postgresql://...",
-        "HEALTHKIT_USER_ID": "your_user_id"
+        "HEALTHKIT_USER_ID": "<your auth user UID>"
       }
     }
   }
 }
 ```
 
-Replace `/path/to/health4ai` with the absolute path to where you cloned the repo. Restart Claude Code, then run `/mcp` to confirm the server is registered. You'll see the health4ai tools listed.
-
-## Step 5: Build and Run the iOS App
-
-Open `ios/Health4AI.xcodeproj` in Xcode. Set your Development Team in **Signing & Capabilities** (a free Apple Developer account works). Build and run on your iPhone.
-
-On first launch, the app walks you through:
-
-1. **HealthKit permissions** — grant access to the metrics you want synced (steps, HRV, sleep, workouts, etc.)
-2. **Database credentials** — paste your `DATABASE_URL` and `HEALTHKIT_USER_ID`
-3. **Start Sync** — triggers the full backfill of your HealthKit history
-
-The backfill imports your complete history — if you've had an Apple Watch for a few years, this is 5+ years of data. It runs in the background and can take a few minutes. You'll see the sync status on the Home screen. The app uses `HKObserverQuery` for ongoing sync, which means new data from Apple Watch pushes immediately rather than waiting for a background processing window.
-
-## Step 6: Verify Everything Works
-
-In Claude Code, ask:
-
-*"Give me a health summary for the last 7 days."*
-
-Claude will call `get_health_summary(days=7)` against your Supabase database and return steps, HRV, resting heart rate, and workout count. If you see real numbers from your Health app data, the full pipeline is working.
-
-You can also run more targeted queries:
-
-- *"What's my HRV trend over the last 30 days?"* → `get_hrv_trend(days=30)`
-- *"Show me my sleep breakdown for last night."* → `get_sleep(days=1)`
-- *"What workouts did I do this month?"* → `get_workouts(days=30)`
-
-## What's in the Database
-
-After backfill, you can query the `healthkit_metrics` table directly in the Supabase dashboard to see what was imported. Each row is a HealthKit sample: metric type (as an HKQuantityTypeIdentifier string), value, unit, started_at, ended_at, source device, and metadata.
-
-For a multi-year dataset you might see several million rows in `healthkit_metrics`. The MCP server transparently routes queries older than 30 days to the `healthkit_daily_summaries` table, which has the same data pre-aggregated to reduce query cost.
+Run `/mcp` to confirm `health4ai` is listed, then ask: *"Give me a health summary for the last 7 days."*
 
 ## Troubleshooting
 
-**MCP server doesn't start:** Check that `DATABASE_URL` in `.env` is correct and that Supabase is accessible from your network. Run `python main.py` directly to see the error.
+**The app can't sync.** Check that Step 2 succeeded and that you signed in as a user that exists in this project. Sync writes only through the ingest function.
 
-**No data after backfill:** The backfill runs in the background — check the Home screen in the iOS app. If the sync status shows errors, verify the connection string is correct and HealthKit permissions were granted.
+**A metric comes back empty.** Read its `data_status`. iOS reports a Health permission you haven't granted as an empty result, which looks exactly like a day with no data. Turn the metric on under Health → Sharing → Apps → health4ai, then sync again.
 
-**Claude doesn't see the tools:** Run `/mcp` in Claude Code. If health4ai isn't listed, the config block in `claude_desktop_config.json` has a syntax error or the path is wrong.
+**The MCP server doesn't start.** Run `python mcp-server/main.py` directly to see the error. Most often `DATABASE_URL` is using a key instead of the database password.
 
----
-
-health4ai: Free while in early access.  
-[Download on the App Store →](https://health4.ai)
+**Prove your setup is isolated.** On a fresh project, `scripts/verify_tenant_isolation.py` creates two throwaway users, syncs samples as each, confirms neither can see the other's rows, and deletes both. It fails if nothing was actually written.

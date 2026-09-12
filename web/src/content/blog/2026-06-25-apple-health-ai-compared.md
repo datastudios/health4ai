@@ -5,6 +5,7 @@ pubDate: 2026-06-23
 slug: "apple-health-ai-compared"
 tags: ["apple-health", "healthkit", "mcp", "comparison", "health-auto-export", "supabase"]
 draft: false
+legacySetup: true
 ---
 
 # Every Way to Get Apple Health Data into an AI in 2026 — Compared

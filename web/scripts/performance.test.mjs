@@ -38,7 +38,11 @@ test('both waitlists retain explicit Apple consent and functional wiring', () =>
   assert.ok(page.includes('consent_testflight'));
   assert.ok(page.includes('waitlist_consent_toggled'));
   assert.ok(page.includes('Not a medical device'));
-  assert.ok(page.includes('tab-supabase') && page.includes('tab-neon') && page.includes('tab-local'));
+  assert.ok(page.includes('Supabase only'))
+  // Neon and local Docker are NOT supported backends: the app signs in with Supabase Auth and writes
+  // through a Supabase Edge Function, and no other ingest path exists. This used to assert those
+  // panels were present, i.e. it guarded the false claim. It now guards against it returning.
+  assert.ok(!page.includes('tab-neon') && !page.includes('tab-local'), 'Neon / local Docker setup panels must not return');
 });
 
 function waitlistFixture(status = 201) {

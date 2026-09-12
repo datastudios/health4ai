@@ -5,6 +5,7 @@ pubDate: 2026-08-25
 slug: "apple-health-developer-api-guide"
 tags: ["apple-health", "healthkit", "developer", "api", "architecture", "mcp", "ios"]
 draft: false
+legacySetup: true
 ---
 
 # Apple Health + AI: The Missing Manual for Developers
