@@ -1,8 +1,13 @@
 -- health4ai — schema for a backend YOU control
 --
 -- health4ai never operates a backend for your health data. This file is the
--- schema you install in your own Supabase project (or any Postgres) so the iOS
--- app has somewhere to sync to. Run 001 then 002.
+-- schema you install in your own Supabase project so the iOS app has somewhere to
+-- sync to. Run 001 then 002, then deploy the healthkit-ingest Edge Function.
+--
+-- SUPABASE ONLY. It references auth.users, and the app authenticates through Supabase Auth
+-- and writes through a Supabase Edge Function. Plain Postgres (Neon, local Docker) has
+-- neither, and health4ai ships no other ingest path. An earlier line here said "or any
+-- Postgres"; that was never true of the app.
 --
 -- It supersedes the older numbered migrations and fixes two defects in them:
 --

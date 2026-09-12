@@ -45,24 +45,43 @@ SKIP_PREFIXES = (
 )
 
 
-def parse_hk_date(s: str) -> str:
+def parse_hk_date(s: str) -> str | None:
     """Convert 'YYYY-MM-DD HH:MM:SS ±HHMM' to ISO8601 with timezone for Postgres."""
     # Apple exports dates like "2013-06-25 19:45:12 -0400"
     try:
         dt = datetime.strptime(s, "%Y-%m-%d %H:%M:%S %z")
         return dt.isoformat()
     except ValueError:
-        return s
+        # None, never the raw string. Returning the unparsed attribute fed arbitrary text
+        # straight into the generated SQL (see _dq below). The caller skips the row.
+        return None
 
 
+import math
 import re as _re
+import secrets
 
-_HK_TYPE_RE = _re.compile(r'^HK[A-Za-z]+$')
+# Letters AND digits: real identifiers include HKQuantityTypeIdentifierDietaryVitaminB12 and ...B6.
+# The letters-only pattern raised on them, uncaught, and killed the whole import. The value is
+# dollar-quoted regardless, so this is a defense-in-depth allowlist, not the injection control.
+_HK_TYPE_RE = _re.compile(r'^HK[A-Za-z0-9]+$')
 
 
 def _dq(tag: str, s: str) -> str:
-    """Dollar-quote a string value — safe against any single-quote or backslash content."""
-    return f"${tag}${s}${tag}$"
+    """Dollar-quote a string value.
+
+    Dollar quoting is only safe if the delimiter never appears inside the value. The tag used to
+    be the caller's predictable f"s{i}" / f"u{i}", with no check, so a HealthKit sourceName or
+    unit containing e.g. "$s0$" closed the quote early and the rest of the value ran as SQL —
+    through the Management API, with a token that has full project power. The tag is now random
+    per value and re-drawn until it does not occur in the content. `tag` is kept for call-site
+    compatibility and is no longer used.
+    """
+    s = "" if s is None else str(s)
+    while True:
+        t = "q" + secrets.token_hex(8)
+        if f"${t}$" not in s:
+            return f"${t}${s}${t}$"
 
 
 def build_insert_sql(rows: list[dict]) -> str:
@@ -73,7 +92,9 @@ def build_insert_sql(rows: list[dict]) -> str:
             raise ValueError(f"Unexpected metric_type at row {i}: {mt!r}")
         val     = r["value"] if r["value"] is not None else "NULL"
         unit    = _dq(f"u{i}", r.get("unit", ""))
-        src     = _dq(f"s{i}", r.get("source_device", ""))
+        # `or ""`, not a .get default: a present-but-null source_device must still become ''
+        # because it is part of the unique key, and NULL <> NULL defeats ON CONFLICT.
+        src     = _dq(f"s{i}", r.get("source_device") or "")
         started = _dq(f"st{i}", r["started_at"])
         ended   = _dq(f"e{i}", r["ended_at"]) if r.get("ended_at") else "NULL"
         uid     = _dq(f"id{i}", USER_ID)
@@ -87,7 +108,7 @@ INSERT INTO public.healthkit_metrics
     (user_id, metric_type, value, unit, source_device, started_at, ended_at, metadata, synced_at)
 VALUES
 {vals_str}
-ON CONFLICT (user_id, metric_type, started_at) DO NOTHING;
+ON CONFLICT (user_id, metric_type, source_device, started_at) DO NOTHING;
 """
 
 
@@ -168,6 +189,10 @@ def main():
                 value = float(raw_value) if raw_value is not None else None
             except (ValueError, TypeError):
                 value = None
+            # float("nan") / float("inf") parse fine and then render as bare nan / inf, which are
+            # not SQL literals and failed the whole 2,000-row batch. Store them as NULL.
+            if value is not None and not math.isfinite(value):
+                value = None
 
             started_at_raw = elem.attrib.get("startDate", "")
             ended_at_raw   = elem.attrib.get("endDate", "")
@@ -180,6 +205,12 @@ def main():
                 "started_at":    parse_hk_date(started_at_raw),
                 "ended_at":      parse_hk_date(ended_at_raw) if ended_at_raw else None,
             }
+            # started_at is NOT NULL and part of the unique key; an unparseable one is skipped,
+            # not guessed at and not passed through as raw text.
+            if row["started_at"] is None:
+                total_skipped += 1
+                elem.clear()
+                continue
 
             total_parsed += 1
 

@@ -154,4 +154,11 @@ $func$;
 REVOKE ALL ON FUNCTION public.summarize_healthkit_metric(uuid, text, date)
   FROM PUBLIC, anon, authenticated;
 
+-- The waitlist trigger function is created in 001, BEFORE the ALTER DEFAULT PRIVILEGES above,
+-- and default privileges are prospective only, so it kept PostgreSQL's default EXECUTE to PUBLIC.
+-- Not exploitable (it reads NEW, which exists only in trigger context), but this file says
+-- default-deny, so make that true of every function it ships. Revoking EXECUTE does not stop the
+-- trigger firing: the privilege is checked when the trigger is created, not each time it fires.
+REVOKE ALL ON FUNCTION public.health4ai_waitlist_normalize_email() FROM PUBLIC, anon, authenticated;
+
 COMMIT;
