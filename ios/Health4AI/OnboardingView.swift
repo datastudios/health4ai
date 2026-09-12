@@ -37,7 +37,10 @@ private struct WelcomeStep: View {
                 Text("Your health data.\nAny AI. Your rules.")
                     .font(.largeTitle.bold())
                     .multilineTextAlignment(.center)
-                Text("Sync HealthKit to a database you control, then use it with an AI you choose. Start with a backend that belongs to you — never someone else’s account.")
+                // Names Supabase and the time cost up front. Onboarding used to run three
+                // screens without once saying what the app actually needs, then land the
+                // user on Home reading "Not connected" with nothing pointing anywhere.
+                Text("Sync HealthKit to a Supabase project you own, then query it with any AI. You’ll need a free Supabase account — setup takes about five minutes.")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

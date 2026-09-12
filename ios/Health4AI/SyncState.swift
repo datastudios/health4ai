@@ -165,6 +165,12 @@ final class SyncState: ObservableObject {
         // path that has never synced a row and offers no way back to the picker.
         let storedType = ConnectionType(rawValue: typeRaw) ?? .supabase
         self.connectionType = storedType == .rest ? .supabase : storedType
+        // Write the coercion through. `didSet` does not fire during init, so without this
+        // UserDefaults keeps "rest" forever and the persisted state contradicts the live
+        // one — harmless, since every launch re-coerces, but it is a lie on disk.
+        if storedType == .rest {
+            defaults.set(ConnectionType.supabase.rawValue, forKey: Keys.connectionType)
+        }
         let savedProjectURL = defaults.string(forKey: Keys.supabaseProjectURL) ?? ""
         self.supabaseProjectURL = savedProjectURL
 

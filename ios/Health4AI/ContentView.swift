@@ -157,6 +157,9 @@ struct SecureFieldToggle: View {
                 Image(systemName: isVisible ? "eye.slash" : "eye")
                     .foregroundStyle(.secondary)
             }
+            // Without this VoiceOver reads the raw symbol name — "eye" — which says
+            // nothing about what the control does or what it is guarding.
+            .accessibilityLabel(isVisible ? "Hide value" : "Show value")
         }
     }
 }

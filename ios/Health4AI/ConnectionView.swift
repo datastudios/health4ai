@@ -85,7 +85,10 @@ struct ConnectionView: View {
     private var supabaseConfigSection: some View {
         Section {
             LabeledContent("Project URL") {
-                TextField("https://abc123.supabase.co", text: $syncState.supabaseProjectURL)
+                // "Project URL", not an example: a placeholder renders in system blue,
+                // the same blue as the Sign In button, so a sample URL there read as a
+                // configured value. The example lives in the footer instead.
+                TextField("Project URL", text: $syncState.supabaseProjectURL)
                     .autocapitalization(.none)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
@@ -98,10 +101,17 @@ struct ConnectionView: View {
         } header: {
             Text("Supabase")
         } footer: {
-            if !syncState.supabaseProjectURL.isEmpty {
+            // No `.tertiary`: it is not a token design.md documents, and stacked on a
+            // footer's own .secondary it measured 1.29:1 against the grouped background.
+            // This is also the first place a stranger can be told what the app needs —
+            // onboarding never names Supabase at all.
+            if syncState.supabaseProjectURL.isEmpty {
+                Text("health4ai stores your health data in a Supabase project you own, "
+                     + "not on our servers. Create a free project at supabase.com, then "
+                     + "paste its Project URL and anon key from Project Settings → API.")
+            } else {
                 Text("Endpoint: \(syncState.resolvedEndpointURL)")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -153,6 +163,10 @@ struct ConnectionView: View {
             } label: {
                 Label("Erase Local Data & Configuration", systemImage: "trash")
             }
+            // `role: .destructive` tints the text but not the Label's image, so the trash
+            // glyph rendered system blue beside red text. `.tint`, never `.foregroundStyle`
+            // on a button — design.md rule 3.
+            .tint(.red)
         } header: {
             Text("Device Privacy")
         } footer: {
@@ -179,15 +193,24 @@ struct ConnectionView: View {
             .disabled(isTesting)
 
             if let result = testResult {
-                Label(result.message, systemImage: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(result.success ? .green : .red)
+                // design.md colour rule 1: the semantic goes on the symbol, the words stay
+                // .primary. Red/green .caption measured 3.55:1 and ~1.9:1 — both under AA,
+                // and colour alone is the whole signal for a colourblind reader.
+                Label {
+                    Text(result.message)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                } icon: {
+                    Image(systemName: result.kind.symbol)
+                        .foregroundStyle(result.kind.tint)
+                }
             }
         } header: {
             Text("Verify")
-        } footer: {
-            Text("Sends a small ping to your endpoint to confirm it's reachable.")
         }
+        // Footer deleted: header "Verify" + button "Test Connection" + a sentence about
+        // pinging an endpoint were three statements of one idea, in mechanism words for
+        // someone who typed a Project URL.
     }
 
     private func testConnection() {
@@ -195,7 +218,8 @@ struct ConnectionView: View {
         testResult = nil
         let url = syncState.resolvedEndpointURL
         guard let endpoint = URL(string: url) else {
-            testResult = TestResult(success: false, message: "Invalid URL")
+            testResult = TestResult(kind: .failure,
+                message: "That Project URL isn't valid. It should look like https://abc123.supabase.co")
             isTesting = false
             return
         }
@@ -215,25 +239,44 @@ struct ConnectionView: View {
             do {
                 let (_, response) = try await URLSession.shared.data(for: req)
                 let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-                let ok = (200...299).contains(code)
-                let message: String
+                // One source for the outcome. `let ok = (200...299).contains(code)` used to
+                // sit beside this switch, so two places decided the same fact and they
+                // disagreed on 401.
+                let result: TestResult
                 switch code {
                 case 200...299:
-                    message = "Endpoint reachable"
+                    result = TestResult(kind: .ok,
+                        message: "Reachable, and your credentials were accepted.")
                 case 401, 403:
-                    message = authManager.currentToken == nil
-                        ? "Endpoint reached — sign in to complete the check"
-                        : "Endpoint reached, but it rejected your credentials"
+                    // "Sign in above" names a control that exists, is visible, and is
+                    // enabled — the Sign In button is two sections up this same screen.
+                    result = authManager.currentToken == nil
+                        ? TestResult(kind: .info,
+                            message: "Your project answered. Sign in above to finish the check.")
+                        : TestResult(kind: .failure,
+                            message: "Your project rejected your sign-in. Sign out and sign in again.")
                 default:
-                    message = "HTTP \(code) — check your config"
+                    result = TestResult(kind: .failure,
+                        message: "Your project answered with HTTP \(code). Check the Project URL.")
                 }
                 await MainActor.run {
-                    testResult = TestResult(success: ok, message: message)
+                    testResult = result
                     isTesting = false
                 }
             } catch {
                 await MainActor.run {
-                    testResult = TestResult(success: false, message: error.localizedDescription)
+                    // localizedDescription is the fallback, not the first answer: "A server
+                    // with the specified hostname could not be found" is Foundation talking
+                    // about a URL the user typed as a Project URL.
+                    let message: String
+                    switch (error as? URLError)?.code {
+                    case .cannotFindHost, .cannotConnectToHost, .timedOut,
+                         .networkConnectionLost, .notConnectedToInternet:
+                        message = "Could not reach your project. Check the Project URL."
+                    default:
+                        message = error.localizedDescription
+                    }
+                    testResult = TestResult(kind: .failure, message: message)
                     isTesting = false
                 }
             }
@@ -242,28 +285,32 @@ struct ConnectionView: View {
 }
 
 private struct TestResult {
-    let success: Bool
-    let message: String
-}
+    /// Three outcomes, not two. With a Bool, the "reachable but not signed in yet" case —
+    /// which is the FIRST thing every new tester hits, because nothing signs them in
+    /// before this button — came back 401, so `success` was false and the row rendered a
+    /// red ✗ next to text saying the endpoint was fine. design.md: green means verified;
+    /// the converse binds just as hard, and red must mean broken.
+    enum Kind {
+        case ok, info, failure
 
-// MARK: - Shared picker (used in onboarding too)
+        var symbol: String {
+            switch self {
+            case .ok:      "checkmark.circle.fill"
+            case .info:    "info.circle.fill"
+            case .failure: "xmark.circle.fill"
+            }
+        }
 
-struct ConnectionPickerView: View {
-    @EnvironmentObject var syncState: SyncState
-
-    var body: some View {
-        Form {
-            Section {
-                TextField("Project URL (https://…)", text: $syncState.supabaseProjectURL)
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                SecureFieldToggle(placeholder: "Anon Key (eyJ…)", userDefaultsKey: "hkb.supabaseAnonKey")
-            } header: {
-                Text("Supabase")
-            } footer: {
-                Text("health4ai syncs to a Supabase project you own. The free tier is enough.")
+        var tint: Color {
+            switch self {
+            case .ok:      .green
+            case .info:    .blue
+            case .failure: .red
             }
         }
     }
+
+    let kind: Kind
+    let message: String
 }
+
