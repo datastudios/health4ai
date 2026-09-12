@@ -37,7 +37,7 @@ A two-part system: an iOS app that syncs HealthKit data to a Supabase project th
 
 ### Supported database backends
 - **Supabase only** (a project the user owns; the free tier covers personal use). The app signs in with Supabase Auth and writes through the `healthkit-ingest` Edge Function.
-- **NOT supported:** Neon, local Docker, any other plain Postgres, and the app's former "REST / Webhook" option. None has an ingest path; none ever synced a row (measured 2026-09-12, register D353). Do not write content describing them as options.
+- **NOT supported:** Neon, local Docker, any other plain Postgres, and the app's "REST / Webhook" option (still shown in builds up to 28, removed on the pre-1.0 branch). None has an ingest path; none ever synced a row (measured 2026-09-12, register D353). Do not write content describing them as options.
 - Setup source of truth: `docs/SETUP.md` in the repo. Use its exact commands.
 
 ### HealthKit Metrics Synced
