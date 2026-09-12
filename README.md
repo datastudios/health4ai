@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/iOS-17%2B-black?style=flat-square&logo=apple" alt="iOS 17+" />
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue?style=flat-square&logo=python" alt="Python 3.11+" />
   <img src="https://img.shields.io/badge/MCP-FastMCP-green?style=flat-square" alt="FastMCP" />
-  <img src="https://img.shields.io/badge/Postgres-any-4169e1?style=flat-square&logo=postgresql" alt="Any Postgres" />
+  <img src="https://img.shields.io/badge/backend-your%20Supabase%20project-3ecf8e?style=flat-square&logo=supabase" alt="Your own Supabase project" />
 </p>
 
 ---
@@ -23,12 +23,12 @@
 ## What it does
 
 ```
-iPhone HealthKit → Your Postgres database → MCP server → Any AI
+iPhone HealthKit → Your Supabase project → MCP server → Any AI
 ```
 
-Apple Health holds years of your biometric data — sleep stages, HRV, heart rate, workouts, VO₂ max, and 150+ other metrics. health4.ai makes all of it queryable from Claude, ChatGPT, Cursor, Ollama, or any MCP-compatible client via 8 purpose-built tools.
+Apple Health holds years of your biometric data — sleep stages, HRV, heart rate, workouts, VO₂ max, and 150+ other metrics. health4.ai makes all of it queryable from Claude, ChatGPT, Cursor, Ollama, or any MCP-compatible client through purpose-built MCP tools.
 
-**You control the data.** It syncs to a Postgres database you configure — Supabase, Neon, or a local Docker container. health4.ai never stores or has access to your health data.
+**You control the data.** It syncs to a Supabase project you create and own. health4.ai runs no backend and never stores or has access to your health data.
 
 ---
 
@@ -39,7 +39,7 @@ Apple Health holds years of your biometric data — sleep stages, HRV, heart rat
 | Apple has no HealthKit server API — all access requires an on-device app | Native iOS app with `HKObserverQuery` + `BGTaskScheduler` background sync |
 | Health Auto Export only works on the same WiFi | Your data lands in Postgres — queryable from any AI, anywhere |
 | The claude.ai Apple Health connector doesn't reach Claude Code CLI or Cursor | Standard MCP (stdio) — one config block works everywhere |
-| Most solutions require a managed cloud service | Bring your own Postgres: Supabase, Neon, or fully local |
+| Most solutions require a managed cloud service | Bring your own Supabase project — health4ai runs no server |
 
 ---
 
@@ -61,57 +61,33 @@ Claude:  Your recovery this week was mixed but trending positive.
 
 ## Quick start
 
-**Choose your Postgres backend first:**
+health4ai needs a **Supabase project you own**. The app signs in with Supabase Auth and writes through a Supabase Edge Function, so plain Postgres (Neon, a local Docker container) is not a supported backend. Full walkthrough: [`docs/SETUP.md`](docs/SETUP.md).
 
-<details>
-<summary><strong>Supabase (free tier available)</strong></summary>
+**1. Create the schema.** Create a project at [supabase.com](https://supabase.com), open its SQL editor, and run [`web/public/schema.sql`](web/public/schema.sql) (also at https://health4.ai/schema.sql). It is generated from `supabase/bootstrap/`: tables, row-level security, and grants that deny clients direct access. Do **not** use `supabase db push` — the numbered migrations do not apply to a fresh project.
 
-```bash
-# 1. Create a project at supabase.com
-# 2. Run the schema
-psql "$DATABASE_URL" < web/public/schema.sql
-# or use the Supabase dashboard SQL editor
-```
-</details>
-
-<details>
-<summary><strong>Neon (serverless Postgres)</strong></summary>
-
-```bash
-# 1. Create a project at neon.tech
-# 2. Run the schema
-psql "$DATABASE_URL" < web/public/schema.sql
-```
-</details>
-
-<details>
-<summary><strong>Local Docker</strong></summary>
-
-```bash
-docker run -d \
-  --name health4ai-postgres \
-  -e POSTGRES_PASSWORD=yourpassword \
-  -p 5432:5432 \
-  postgres:16
-psql "postgresql://postgres:yourpassword@localhost:5432/postgres" \
-  < web/public/schema.sql
-```
-</details>
-
-**Then set up the MCP server:**
+**2. Deploy the ingest function** (needs the [Supabase CLI](https://supabase.com/docs/guides/cli)):
 
 ```bash
 git clone https://github.com/jefflitt1/health4ai.git
 cd health4ai
+supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no-verify-jwt
+```
 
+`--no-verify-jwt` is deliberate: the function verifies the signed-in user's token itself and writes only under that user's ID.
+
+**3. Create your user.** In the dashboard, Authentication → Users → add a user, and copy its UID. The app signs in; it does not sign up.
+
+**Then set up the MCP server** (from the same checkout):
+
+```bash
 cp mcp-server/.env.example mcp-server/.env
 ```
 
 Edit `mcp-server/.env`:
 
 ```env
-DATABASE_URL=postgresql://...    # your Postgres connection string
-HEALTHKIT_USER_ID=your_user_id   # any string to identify your data
+DATABASE_URL=postgresql://...  # your project's pooler connection string (database password, not a key)
+HEALTHKIT_USER_ID=...           # your Supabase Auth user's UID (see mcp-server/.env.example)
 ```
 
 **Add to your AI client:**
@@ -127,7 +103,7 @@ HEALTHKIT_USER_ID=your_user_id   # any string to identify your data
       "args": ["/path/to/health4ai/mcp-server/main.py"],
       "env": {
         "DATABASE_URL": "postgresql://...",
-        "HEALTHKIT_USER_ID": "your_user_id"
+        "HEALTHKIT_USER_ID": "<your auth user UID>"
       }
     }
   }
@@ -142,7 +118,7 @@ Same block → `~/.cursor/mcp.json`
 </details>
 
 <details>
-<summary><strong>Ollama (fully local — no data leaves your machine)</strong></summary>
+<summary><strong>Ollama (local model)</strong></summary>
 
 Pair with [`mcphost`](https://github.com/mark3labs/mcphost) or [`mcp-client-for-ollama`](https://github.com/jonigl/mcp-client-for-ollama):
 
@@ -151,10 +127,10 @@ mcphost --model ollama/llama3.2 \
   --mcp-server "health4ai:python /path/to/health4ai/mcp-server/main.py"
 ```
 
-Your health data and the model both stay on your hardware — nothing leaves your machine.
+The model runs on your hardware and the MCP server runs locally; your health data is read from your own Supabase project.
 </details>
 
-**Install the iOS app:** Configure a database and Supabase account that you control, then sign in and tap **Start Sync**. For a private TestFlight beta, follow [the tester-isolation guide](docs/TESTFLIGHT-BETA.md); never use another person's backend or credentials.
+**Install the iOS app:** connect it to that Supabase project (Project URL + anon key), sign in as the user you created, and tap **Start Sync**. For a private TestFlight beta, follow [the tester-isolation guide](docs/TESTFLIGHT-BETA.md); never use another person's backend or credentials.
 
 ---
 
@@ -204,18 +180,18 @@ other metric synced normally, and the app displayed a green "Complete" throughou
 │  HKObserverQuery + BGTaskScheduler                          │
 │  → continuous background sync                               │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ HTTPS
+                           │ HTTPS → your healthkit-ingest Edge Function
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Your Postgres database (Supabase / Neon / local Docker)    │
+│  Your Supabase project (you own it)                         │
 │  healthkit_metrics · healthkit_daily_summaries              │
-│  v_healthkit_daily_quantity (unified view)                  │
+│  row-level security on · no direct client access            │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ SQL (service-role key, server-side only)
+                           │ Postgres connection (database password, from your machine)
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  FastMCP server  (mcp-server/main.py)                       │
-│  11 tools · stdio transport                                  │
+│  FastMCP tools · stdio transport                             │
 └──────────────────────────┬──────────────────────────────────┘
                            │ MCP
                            ▼
@@ -234,10 +210,10 @@ health4ai/
 │   └── Health4AI/               # HealthKit sync engine, auth, settings
 ├── mcp-server/
 │   ├── main.py                  # FastMCP server entry point
-│   ├── tools.py                 # 11 tool implementations
+│   ├── tools.py                 # MCP tool implementations
 │   └── .env.example             # Required environment variables
 ├── web/
-│   ├── public/schema.sql        # Portable Postgres schema (all backends)
+│   ├── public/schema.sql        # Generated from supabase/bootstrap (Supabase only)
 │   └── src/                     # Astro marketing site
 ├── scripts/
 │   ├── import_health_export.py  # One-time XML backfill from Apple Health export
@@ -250,7 +226,7 @@ health4ai/
 
 ## Privacy
 
-Your health data goes **directly from your iPhone to your Postgres database**. health4.ai never receives, stores, or has access to it. The MCP server runs locally with your own credentials — your data never touches our infrastructure.
+Your health data goes **directly from your iPhone to your own Supabase project**. health4.ai never receives, stores, or has access to it. The MCP server runs locally with your own credentials — your data never touches our infrastructure.
 
 See the [Privacy Policy](https://health4.ai/privacy) for full details.
 

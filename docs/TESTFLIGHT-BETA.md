@@ -11,6 +11,11 @@
 > The "required test evidence" section at the bottom is no longer a manual
 > checklist: `scripts/verify_tenant_isolation.py` runs it, and fails if it proves
 > isolation while writing zero rows.
+>
+> **Corrected 2026-09-12.** Until then the script could not run at all (a missing
+> `import os`), and the setup this file described could not sync a single row
+> (register D353). Both are fixed: the setup below was run end to end on a fresh
+> Supabase stack and the script passed all 14 checks.
 
 ## Privacy boundary
 
@@ -20,11 +25,12 @@ database credentials. A TestFlight group distributes the app binary; it is not a
 shared health-data environment.
 
 For the current bring-your-own-backend beta, health4ai does not provision an
-account or backend for the tester. The tester creates their own Supabase project,
-applies the repository's migrations (including `009_healthkit_metrics_tenant_isolation.sql`),
-deploys `healthkit-ingest`, then enters only their own project URL and anon key
-in the app. They create their Supabase user through their own dashboard and then
-sign in in the app.
+account or backend for the tester. The tester follows [docs/SETUP.md](SETUP.md): creates
+their own Supabase project, runs `web/public/schema.sql` in its SQL editor (generated from
+`supabase/bootstrap`), deploys `healthkit-ingest` with `--no-verify-jwt`, creates their
+Supabase user in their own dashboard, then enters only their own project URL and anon key
+in the app and signs in. **Not `supabase db push`** — the numbered migrations do not apply
+to a fresh project.
 
 ## Invite safely
 

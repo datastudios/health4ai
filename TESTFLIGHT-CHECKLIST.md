@@ -1,6 +1,6 @@
 # health4ai — TestFlight Tester Checklist
 
-Updated: 2026-09-04.
+Updated: 2026-09-12.
 
 > **STOP — this checklist describes a private beta among people who can operate a
 > database. Re-measured 2026-09-04 against the live systems rather than against
@@ -33,7 +33,7 @@ Updated: 2026-09-04.
 - [x] Team ID Z3D54X3D96 across all build configs
 - [x] Privacy Policy live at https://health4.ai/privacy
 - [x] App created in App Store Connect (com.jglittell.health4ai)
-- [x] health4.ai cloud backend removed — app is self-hosted only (Supabase / REST)
+- [x] health4.ai cloud backend removed — app is self-hosted only (Supabase; the REST option never synced and is removed on the pre-1.0 branch)
 - [x] Hosted-tier DB tables dropped from Supabase (healthkit_api_keys, healthkit_setup_codes)
 - [x] Tenant-isolation migration and authenticated ingest safeguards added
 - [x] New installs default to a minimal Health data scope; existing completed installs retain their current scope
@@ -79,24 +79,23 @@ for both internal and external TestFlight groups.
 3. HealthKit permission grant, with a choice of Essentials (default) or every supported type
 
 **Connection screen:**
-- Two backend options: **Supabase** (recommended) or **REST / Webhook**
-- For Supabase: paste the URL + anon key for a project they control → Test Connection → done
+- One backend: a **Supabase** project the tester owns. Builds up to 28 still show a REST / Webhook option; it never synced a row.
+- Paste the Project URL + anon key for a project they control → sign in as a user created in that project's dashboard → Test Connection
 - No health4.ai account, no setup code, no cloud option
 
 **What they need before testing:**
-- A fresh free Supabase project (supabase.com) with the health4ai migrations and Edge Function deployed, OR
-- Any HTTPS endpoint that accepts JSON POST
+- A free Supabase project with `web/public/schema.sql` run and `healthkit-ingest` deployed — follow [`docs/SETUP.md`](docs/SETUP.md)
 
-> Send testers to [`docs/TESTFLIGHT-BETA.md`](docs/TESTFLIGHT-BETA.md). They must use a separate Supabase project/account from Jeff's production setup, then run `supabase db push` and `supabase functions deploy healthkit-ingest`. Do not use the legacy `web/functions/ingest.js` endpoint.
+> Send testers to [`docs/TESTFLIGHT-BETA.md`](docs/TESTFLIGHT-BETA.md). They must use a separate Supabase project/account from Jeff's production setup, and follow [`docs/SETUP.md`](docs/SETUP.md). **Not `supabase db push`** — the numbered migrations fail on a fresh project. The legacy `web/functions/ingest.js` proxy was retired 2026-09-12.
 
 For a small, known group, use an App Store Connect internal or external TestFlight group with email invites. A public link is only appropriate with a tester cap and acceptance criteria, because it can be forwarded. External testers require Beta App Review.
 
 ---
 
-## KNOWN GAP — Background delivery (re-enable after iOS 26 stable)
+## KNOWN GAP — Background delivery (re-enable after the iOS 27 GM retest, register A56)
 
-`com.apple.developer.healthkit.background-delivery` is disabled due to iOS 26 Beta XPC crash.
-When stable iOS 26 ships:
+`com.apple.developer.healthkit.background-delivery` is disabled due to an iOS 27 Beta XPC crash.
+When the crash is confirmed gone on the iOS 27 GM:
 1. `ios/Health4AI/Health4AI.entitlements` → add `<key>com.apple.developer.healthkit.background-delivery</key><true/>`
 2. `ios/Health4AI/Info.plist` → restore UIBackgroundModes + BGTaskSchedulerPermittedIdentifiers
 3. Re-archive, bump build number, upload
