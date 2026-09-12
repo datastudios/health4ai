@@ -14,7 +14,6 @@ struct ConnectionView: View {
     var body: some View {
         NavigationStack {
             List {
-                backendTypeSection
                 configSection
                 authSection
                 privacySection
@@ -56,26 +55,18 @@ struct ConnectionView: View {
     }
 
     // MARK: - Backend type
-
-    private var backendTypeSection: some View {
-        Section {
-            Picker("Backend", selection: $syncState.connectionType) {
-                ForEach(ConnectionType.allCases, id: \.self) { type in
-                    Text(type.displayName).tag(type)
-                }
-            }
-            .pickerStyle(.segmented)
-        } header: {
-            Text("Backend Type")
-        } footer: {
-            switch syncState.connectionType {
-            case .supabase:
-                Text("Enter your Supabase project URL and anon key. The sync endpoint is configured automatically.")
-            case .rest:
-                Text("Enter any HTTPS endpoint that accepts JSON POST requests.")
-            }
-        }
-    }
+    //
+    // The REST / Webhook picker is REMOVED for 1.0, not merely hidden behind a flag.
+    // It was presented as a first-class choice and had never worked: restBearerToken,
+    // restApiKeyValue and restApiKeyHeader were written here and read by nothing —
+    // postSamples hardcodes the Supabase JWT, and every entry point in AppDelegate gates
+    // on authManager.isSignedIn, which is "a Supabase access token exists". A tester who
+    // picked REST got "No auth token found — please sign in again", pointing at a sign-in
+    // this path never offers. Making it real needs the auth headers AND a new launch gate,
+    // and cannot be tested without a live endpoint, so it is out of a 1.0 going to
+    // strangers. ConnectionType.rest, RestAuthType, resolvedEndpointURL's branch and the
+    // Keychain keys are all left intact, so re-enabling is a UI change plus that work.
+    // Register D337.
 
     // MARK: - Config (conditional on type)
 
@@ -85,7 +76,9 @@ struct ConnectionView: View {
         case .supabase:
             supabaseConfigSection
         case .rest:
-            restConfigSection
+            // Unreachable: SyncState.init coerces a stored `.rest` back to `.supabase`.
+            // The case stays only to keep the switch exhaustive.
+            supabaseConfigSection
         }
     }
 
@@ -110,44 +103,6 @@ struct ConnectionView: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
-        }
-    }
-
-    private var restConfigSection: some View {
-        Section {
-            LabeledContent("Endpoint URL") {
-                TextField("https://your-server.com/api/health", text: $syncState.serverURL)
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .multilineTextAlignment(.trailing)
-                    .font(.system(.caption, design: .monospaced))
-            }
-            Picker("Auth", selection: $syncState.restAuthType) {
-                ForEach(RestAuthType.allCases, id: \.self) { type in
-                    Text(type.displayName).tag(type)
-                }
-            }
-            switch syncState.restAuthType {
-            case .none:
-                EmptyView()
-            case .bearer:
-                LabeledContent("Bearer Token") {
-                    SecureFieldToggle(placeholder: "Token", userDefaultsKey: "hkb.restBearerToken")
-                }
-            case .apiKey:
-                LabeledContent("Header Name") {
-                    TextField("X-API-Key", text: $syncState.restApiKeyHeader)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
-                        .multilineTextAlignment(.trailing)
-                }
-                LabeledContent("Key Value") {
-                    SecureFieldToggle(placeholder: "your-key", userDefaultsKey: "hkb.restApiKeyValue")
-                }
-            }
-        } header: {
-            Text("REST Endpoint")
         }
     }
 
@@ -249,6 +204,12 @@ struct ConnectionView: View {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["ping": true])
         req.timeoutInterval = 10
+        // Send the same credential the sync will send. Unauthenticated, this pinged the
+        // ingest endpoint bare and every correctly-configured project came back 401, so
+        // the test could report "authentication is required" for a connection that works.
+        if let token = authManager.currentToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
 
         Task {
             do {
@@ -260,7 +221,9 @@ struct ConnectionView: View {
                 case 200...299:
                     message = "Endpoint reachable"
                 case 401, 403:
-                    message = "Endpoint reached, but authentication is required"
+                    message = authManager.currentToken == nil
+                        ? "Endpoint reached — sign in to complete the check"
+                        : "Endpoint reached, but it rejected your credentials"
                 default:
                     message = "HTTP \(code) — check your config"
                 }
@@ -291,40 +254,15 @@ struct ConnectionPickerView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Backend", selection: $syncState.connectionType) {
-                    ForEach(ConnectionType.allCases, id: \.self) { type in
-                        Text(type.displayName).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
+                TextField("Project URL (https://…)", text: $syncState.supabaseProjectURL)
+                    .autocapitalization(.none)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                SecureFieldToggle(placeholder: "Anon Key (eyJ…)", userDefaultsKey: "hkb.supabaseAnonKey")
+            } header: {
+                Text("Supabase")
             } footer: {
-                Text(syncState.connectionType == .supabase
-                     ? "Supabase is recommended if you want AI agents to query your data via MCP."
-                     : "Any HTTPS endpoint that accepts JSON POST requests.")
-            }
-            if syncState.connectionType == .supabase {
-                Section("Supabase") {
-                    TextField("Project URL (https://…)", text: $syncState.supabaseProjectURL)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    SecureFieldToggle(placeholder: "Anon Key (eyJ…)", userDefaultsKey: "hkb.supabaseAnonKey")
-                }
-            } else {
-                Section("REST Endpoint") {
-                    TextField("https://your-server.com/api/health", text: $syncState.serverURL)
-                        .autocapitalization(.none)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                    Picker("Auth", selection: $syncState.restAuthType) {
-                        ForEach(RestAuthType.allCases, id: \.self) { t in
-                            Text(t.displayName).tag(t)
-                        }
-                    }
-                    if syncState.restAuthType == .bearer {
-                        SecureFieldToggle(placeholder: "Bearer token", userDefaultsKey: "hkb.restBearerToken")
-                    }
-                }
+                Text("health4ai syncs to a Supabase project you own. The free tier is enough.")
             }
         }
     }

@@ -11,9 +11,58 @@ import UIKit
 /// - Foreground launch sync (on every app open)
 ///
 /// Also handles batched HTTP POST with retry logic.
+/// FIFO async mutex.
+///
+/// A Swift `actor` is re-entrant across `await`: another call enters at every suspension
+/// point, so actor isolation alone does not serialize an operation that suspends — and a
+/// sync suspends twice per page, on the HealthKit query and on the HTTP post. This gives
+/// real mutual exclusion across those awaits.
+actor SyncMutex {
+    private var locked = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func lock() async {
+        if !locked {
+            locked = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func unlock() {
+        if waiters.isEmpty {
+            locked = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 final class SyncEngine {
 
     @MainActor static let shared = SyncEngine()
+
+    /// Guards `syncAnchors` and keeps two sync passes from overlapping.
+    ///
+    /// Both were live: `AppDelegate.didFinishLaunching` starts a full pass and
+    /// `applicationDidBecomeActive` starts a second one moments later on the same cold
+    /// launch, while any observer fire adds a third. They shared an unsynchronized
+    /// Dictionary — undefined behaviour in Swift — and could regress each other's anchor,
+    /// re-fetching a window that had already been posted.
+    private static let syncMutex = SyncMutex()
+
+    /// Runs `body` with no other sync in flight.
+    private static func serialized<T>(_ body: () async throws -> T) async rethrows -> T {
+        await syncMutex.lock()
+        do {
+            let result = try await body()
+            await syncMutex.unlock()
+            return result
+        } catch {
+            await syncMutex.unlock()
+            throw error
+        }
+    }
 
     static let batchSize = 500
 
@@ -52,7 +101,16 @@ final class SyncEngine {
 
     // MARK: - BGTaskScheduler Registration (disabled on iOS 27 Beta)
     // BackgroundTasks.framework triggers _libxpc_initializer XPC crash on iOS 27 Beta.
-    // Restore these when the beta is fixed. HKObserverQuery background delivery still works.
+    //
+    // Background sync does NOT work while this is off, and the previous version of this
+    // comment claimed "HKObserverQuery background delivery still works" — it does not.
+    // `enableBackgroundDelivery` needs the com.apple.developer.healthkit.background-delivery
+    // entitlement, which is commented out in Health4AI.entitlements for the same reason, so
+    // the call below fails and observers only ever fire while the app is in the FOREGROUND.
+    // Measured 2026-09-11: not one row reached the database in 48 hours, and every sync in
+    // the app's history landed in a burst on a day the app was opened. Register D335.
+    // Restore all three (entitlement, UIBackgroundModes, BGTaskSchedulerPermittedIdentifiers)
+    // once the crash is retested against the iOS 27 GM.
 
     // MARK: - HKObserverQuery registration
 
@@ -143,6 +201,12 @@ final class SyncEngine {
     /// Call on every app foreground / launch.
     func performForegroundSync() {
         Task {
+            // `isSyncing` was set here and never read, so the duplicate cold-launch call
+            // from applicationDidBecomeActive started a second full pass over the same
+            // types. The mutex would serialize them; this stops the redundant one being
+            // queued at all.
+            let alreadyRunning = await MainActor.run { self.syncState.isSyncing }
+            guard !alreadyRunning else { return }
             await MainActor.run { self.syncState.isSyncing = true }
             do {
                 let count = try await performFullSync()
@@ -160,10 +224,24 @@ final class SyncEngine {
         let types = HealthKitManager.sampleTypes()
         var totalCount = 0
 
-        // Sync each type sequentially to keep memory usage bounded
+        // Sync each type sequentially to keep memory usage bounded.
+        //
+        // Per-type do/catch, matching BulkExportManager.runBackfill. This loop used to be a
+        // bare `try await`, so ONE type throwing — a transient 5xx, a token expiring
+        // mid-pass, a single bad HealthKit query — abandoned every type after it in
+        // iteration order. With background delivery disabled this pass is the only thing
+        // moving data, so an abandoned pass is not retried until the next app open.
+        var failures: [String] = []
         for sampleType in types {
-            let count = try await syncType(sampleType)
-            totalCount += count
+            do {
+                totalCount += try await syncType(sampleType)
+            } catch {
+                failures.append(sampleType.identifier)
+                print("[SyncEngine] Sync failed for \(sampleType.identifier): \(error)")
+            }
+        }
+        if !failures.isEmpty {
+            print("[SyncEngine] \(failures.count) of \(types.count) types failed this pass")
         }
         return totalCount
     }
@@ -173,6 +251,12 @@ final class SyncEngine {
     /// Queries new samples since the last anchor for `sampleType`, posts them,
     /// and saves the new anchor.
     func syncType(_ sampleType: HKSampleType) async throws -> Int {
+        try await Self.serialized { try await self.syncTypeLocked(sampleType) }
+    }
+
+    /// The body of `syncType`. Only ever called while `syncMutex` is held, which is what
+    /// makes the `syncAnchors` reads and writes below safe.
+    private func syncTypeLocked(_ sampleType: HKSampleType) async throws -> Int {
         let serverURL = await MainActor.run { syncState.resolvedEndpointURL }
         let token: String
         do {
@@ -375,9 +459,17 @@ final class SyncEngine {
     }
 
     /// Clears all sync anchors (call before a full backfill to allow re-sync).
+    ///
+    /// Under the mutex like every other `syncAnchors` access. Unguarded, this raced a sync
+    /// already in flight, which would write its own anchor back immediately afterwards and
+    /// quietly defeat the reset.
     func resetAnchors() {
-        syncAnchors.removeAll()
-        UserDefaults.standard.removeObject(forKey: Self.anchorsKey)
+        Task {
+            await Self.serialized {
+                self.syncAnchors.removeAll()
+                UserDefaults.standard.removeObject(forKey: Self.anchorsKey)
+            }
+        }
     }
 }
 

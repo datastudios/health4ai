@@ -160,7 +160,11 @@ final class SyncState: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         let typeRaw = defaults.string(forKey: Keys.connectionType) ?? ConnectionType.supabase.rawValue
-        self.connectionType = ConnectionType(rawValue: typeRaw) ?? .supabase
+        // `.rest` is not selectable in 1.0 (see ConnectionView "Backend type"). Anyone
+        // holding a stored `rest` selection is coerced to Supabase rather than left on a
+        // path that has never synced a row and offers no way back to the picker.
+        let storedType = ConnectionType(rawValue: typeRaw) ?? .supabase
+        self.connectionType = storedType == .rest ? .supabase : storedType
         let savedProjectURL = defaults.string(forKey: Keys.supabaseProjectURL) ?? ""
         self.supabaseProjectURL = savedProjectURL
 

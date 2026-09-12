@@ -402,8 +402,58 @@ final class HealthKitManager {
         for type: HKQuantityType,
         quantity: HKQuantity
     ) -> (Double, String) {
-        // Map of identifier → preferred unit
-        let unitMap: [String: HKUnit] = [
+        // Map of identifier → preferred unit. `Self.unitMap`, not a local: this is called
+        // once per sample and a backfill converts hundreds of thousands of them, so building
+        // an ~120-entry dictionary here made the hot path allocate on every single record.
+        let unitMap = Self.unitMap
+        let identifier = type.identifier
+
+        // iOS 18+ only, so it cannot live in the static map above. Its unit is its own
+        // dimension: without this it matched nothing, fell past every fallback, and was
+        // stored as (0.0, "unsupported") — a silent zero indistinguishable from real data.
+        if #available(iOS 18.0, *),
+           identifier == HKQuantityTypeIdentifier.estimatedWorkoutEffortScore.rawValue {
+            let effort = HKUnit.appleEffortScore()
+            if quantity.is(compatibleWith: effort) {
+                return (quantity.doubleValue(for: effort), effort.unitString)
+            }
+        }
+
+        if let preferredUnit = unitMap[identifier], quantity.is(compatibleWith: preferredUnit) {
+            return (quantity.doubleValue(for: preferredUnit), preferredUnit.unitString)
+        }
+
+        // Fallback: try common units in order of specificity.
+        //
+        // `.gram()`, NOT `.gramUnit(with: .kilo)`. `is(compatibleWith:)` matches on DIMENSION,
+        // not scale, so every unmapped mass quantity used to match kilograms: a 32 g protein
+        // entry was stored as 0.032 kg. That is a truthful conversion — the unit travels with
+        // the value — but it is the wrong unit for nutrition, it pushes micronutrients down to
+        // ~1e-10, and a metric whose unit CHANGES between app versions is aggregated across
+        // both units by the daily summariser. Grams is the HealthKit convention for dietary
+        // mass, and every dietary identifier is now mapped explicitly below regardless.
+        let fallbackUnits: [HKUnit] = [
+            .count(), .kilocalorie(), .meter(), .gram(),
+            .percent(), .second(), .minute(), .liter(), .degreeCelsius(),
+            .millimeterOfMercury(), HKUnit(from: "count/min"),
+            HKUnit.watt(), HKUnit(from: "m/s"), HKUnit(from: "L/min")
+        ]
+        for unit in fallbackUnits {
+            if quantity.is(compatibleWith: unit) {
+                return (quantity.doubleValue(for: unit), unit.unitString)
+            }
+        }
+
+        // Last resort: count if compatible; otherwise return a placeholder to avoid NSException.
+        guard quantity.is(compatibleWith: .count()) else {
+            return (0.0, "unsupported")
+        }
+        return (quantity.doubleValue(for: .count()), "count")
+    }
+
+    /// Preferred unit per quantity identifier. Every dietary type is listed explicitly:
+    /// leaving them to the fallback is what put nutrition into kilograms.
+    private static let unitMap: [String: HKUnit] = [
             HKQuantityTypeIdentifier.stepCount.rawValue:                  .count(),
             HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:     .meter(),
             HKQuantityTypeIdentifier.distanceCycling.rawValue:            .meter(),
@@ -475,32 +525,49 @@ final class HealthKitManager {
             HKQuantityTypeIdentifier.waterTemperature.rawValue:           .degreeCelsius(),
             HKQuantityTypeIdentifier.timeInDaylight.rawValue:             .minute(),
             HKQuantityTypeIdentifier.physicalEffort.rawValue:             HKUnit(from: "kcal/hr·kg"),
+            // Nutrition — grams
+            HKQuantityTypeIdentifier.dietaryFatTotal.rawValue:            .gram(),
+            HKQuantityTypeIdentifier.dietaryFatPolyunsaturated.rawValue:  .gram(),
+            HKQuantityTypeIdentifier.dietaryFatMonounsaturated.rawValue:  .gram(),
+            HKQuantityTypeIdentifier.dietaryFatSaturated.rawValue:        .gram(),
+            HKQuantityTypeIdentifier.dietaryCarbohydrates.rawValue:       .gram(),
+            HKQuantityTypeIdentifier.dietaryFiber.rawValue:               .gram(),
+            HKQuantityTypeIdentifier.dietarySugar.rawValue:               .gram(),
+            HKQuantityTypeIdentifier.dietaryProtein.rawValue:             .gram(),
+            // Nutrition — milligrams
+            HKQuantityTypeIdentifier.dietaryCholesterol.rawValue:      .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietarySodium.rawValue:           .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryCalcium.rawValue:          .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryIron.rawValue:             .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryPotassium.rawValue:        .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryChloride.rawValue:         .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryMagnesium.rawValue:        .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryPhosphorus.rawValue:       .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryZinc.rawValue:             .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryVitaminC.rawValue:         .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryVitaminE.rawValue:         .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryNiacin.rawValue:           .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryPantothenicAcid.rawValue:  .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryRiboflavin.rawValue:       .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryThiamin.rawValue:          .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryVitaminB6.rawValue:        .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryCopper.rawValue:           .gramUnit(with: .milli),
+            HKQuantityTypeIdentifier.dietaryManganese.rawValue:        .gramUnit(with: .milli),
+            // Nutrition — micrograms
+            HKQuantityTypeIdentifier.dietaryVitaminA.rawValue:    .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryVitaminB12.rawValue:  .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryVitaminD.rawValue:    .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryVitaminK.rawValue:    .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryBiotin.rawValue:      .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryChromium.rawValue:    .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryFolate.rawValue:      .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryIodine.rawValue:      .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietaryMolybdenum.rawValue:  .gramUnit(with: .micro),
+            HKQuantityTypeIdentifier.dietarySelenium.rawValue:    .gramUnit(with: .micro),
+            // Non-mass types that also had no mapping and fell through to a bare count
+            HKQuantityTypeIdentifier.insulinDelivery.rawValue:            .internationalUnit(),
+            HKQuantityTypeIdentifier.electrodermalActivity.rawValue:      .siemenUnit(with: .micro),
         ]
-
-        let identifier = type.identifier
-        if let preferredUnit = unitMap[identifier], quantity.is(compatibleWith: preferredUnit) {
-            return (quantity.doubleValue(for: preferredUnit), preferredUnit.unitString)
-        }
-
-        // Fallback: try common units in order of specificity
-        let fallbackUnits: [HKUnit] = [
-            .count(), .kilocalorie(), .meter(), .gramUnit(with: .kilo),
-            .percent(), .second(), .minute(), .liter(), .degreeCelsius(),
-            .millimeterOfMercury(), HKUnit(from: "count/min"),
-            HKUnit.watt(), HKUnit(from: "m/s"), HKUnit(from: "L/min")
-        ]
-        for unit in fallbackUnits {
-            if quantity.is(compatibleWith: unit) {
-                return (quantity.doubleValue(for: unit), unit.unitString)
-            }
-        }
-
-        // Last resort: count if compatible; otherwise return a placeholder to avoid NSException.
-        guard quantity.is(compatibleWith: .count()) else {
-            return (0.0, "unsupported")
-        }
-        return (quantity.doubleValue(for: .count()), "count")
-    }
 
     // MARK: - Sleep stage name
 
