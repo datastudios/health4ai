@@ -3,10 +3,10 @@ MCP tool implementations — reads from Postgres via psycopg2.
 Routing: queries within 30 days use raw healthkit_metrics;
 queries beyond 30 days use healthkit_daily_summaries (aggregated).
 
-Connection: set DATABASE_URL in env. If DATABASE_URL is not set but
-SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY are present, DATABASE_URL is
-auto-constructed using Supabase's transaction pooler:
-  postgresql://postgres.{project_ref}:{SERVICE_ROLE_KEY}@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+Connection: set DATABASE_URL (or its alias SUPABASE_DB_URL) to a Postgres connection
+string. Nothing is auto-constructed from SUPABASE_URL or a service-role key — that key is not
+the database password. An earlier version of this docstring described exactly that fallback;
+_build_database_url() below refuses to build one, and says why.
 """
 
 from datetime import datetime, date, timedelta, timezone
