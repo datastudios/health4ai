@@ -206,6 +206,21 @@ final class SyncState: ObservableObject {
         syncError = message
     }
 
+    /// Some types synced, some did not.
+    ///
+    /// Needed because per-type error isolation created a path where every type could fail
+    /// and the pass still reported success: `recordSyncComplete(count: 0)` stamps a fresh
+    /// `lastSyncDate` and clears `syncError`, so a total failure rendered as "synced, 0
+    /// records". That is the vacuous-success shape this app has already been bitten by
+    /// once, when a denied HealthKit permission showed a green Complete tick for months.
+    func recordSyncPartial(count: Int, failed: Int, ofTypes total: Int) {
+        lastSyncDate = Date()
+        lastSyncRecordCount = count
+        lifetimeSyncedRecords += count
+        isSyncing = false
+        syncError = "\(failed) of \(total) data types failed to sync."
+    }
+
     func recordBackfillProgress(posted: Int, stored: Int?, total: Int,
                                 earliest: Date?, latest: Date?) {
         let delta = posted - backfillSyncedRecords

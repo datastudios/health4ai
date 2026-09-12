@@ -51,6 +51,15 @@ final class SyncEngine {
     /// re-fetching a window that had already been posted.
     private static let syncMutex = SyncMutex()
 
+    /// Whether a full pass is in flight. Deliberately NOT `syncState.isSyncing`.
+    ///
+    /// `isSyncing` is UI state, and the observer path writes it too: an observer firing
+    /// mid-pass calls `recordSyncComplete`, which sets it false. Guarding on it would have
+    /// let a second full pass start while the first was still running — the very thing the
+    /// guard exists to prevent. MainActor-isolated so the claim below can be a single
+    /// atomic hop.
+    @MainActor private static var fullSyncInFlight = false
+
     /// Runs `body` with no other sync in flight.
     private static func serialized<T>(_ body: () async throws -> T) async rethrows -> T {
         await syncMutex.lock()
@@ -201,26 +210,58 @@ final class SyncEngine {
     /// Call on every app foreground / launch.
     func performForegroundSync() {
         Task {
-            // `isSyncing` was set here and never read, so the duplicate cold-launch call
-            // from applicationDidBecomeActive started a second full pass over the same
-            // types. The mutex would serialize them; this stops the redundant one being
-            // queued at all.
-            let alreadyRunning = await MainActor.run { self.syncState.isSyncing }
-            guard !alreadyRunning else { return }
-            await MainActor.run { self.syncState.isSyncing = true }
+            // Test AND set in ONE MainActor hop. Reading the flag, awaiting, then writing
+            // it is check-then-act: both cold-launch callers (didFinishLaunching and
+            // applicationDidBecomeActive, which fire within moments of each other) could
+            // observe false before either wrote true, and both would proceed — exactly the
+            // duplicate pass this guard exists to stop.
+            let claimed = await MainActor.run { () -> Bool in
+                guard !Self.fullSyncInFlight else { return false }
+                Self.fullSyncInFlight = true
+                self.syncState.isSyncing = true
+                return true
+            }
+            guard claimed else { return }
+
             do {
-                let count = try await performFullSync()
-                await MainActor.run { self.syncState.recordSyncComplete(count: count) }
+                let outcome = try await performFullSync()
+                await MainActor.run {
+                    Self.fullSyncInFlight = false
+                    if outcome.failures.isEmpty {
+                        self.syncState.recordSyncComplete(count: outcome.count)
+                    } else if outcome.failures.count == outcome.attempted {
+                        // Every type failed. Reporting this as a completed sync of 0
+                        // records is how a total outage looks like a quiet day.
+                        let first = outcome.failures[0]
+                        self.syncState.recordSyncError(
+                            "Sync failed for all \(outcome.attempted) data types. "
+                            + "\(first.error.localizedDescription)")
+                    } else {
+                        self.syncState.recordSyncPartial(
+                            count: outcome.count,
+                            failed: outcome.failures.count,
+                            ofTypes: outcome.attempted)
+                    }
+                }
             } catch {
-                await MainActor.run { self.syncState.recordSyncError(error.localizedDescription) }
+                await MainActor.run {
+                    Self.fullSyncInFlight = false
+                    self.syncState.recordSyncError(error.localizedDescription)
+                }
             }
         }
     }
 
     // MARK: - Full sync (all types, anchored)
 
+    /// - Returns: records synced, the per-type failures, and how many types were tried.
+    ///
+    /// The failures are RETURNED, not just logged. Per-type `do/catch` stopped one bad type
+    /// aborting the pass, but on its own it also meant the pass could never throw, so the
+    /// caller's error branch went dead and 107-of-107 failures reported as a clean sync.
     @discardableResult
-    func performFullSync() async throws -> Int {
+    func performFullSync() async throws
+        -> (count: Int, failures: [(type: String, error: Error)], attempted: Int) {
         let types = HealthKitManager.sampleTypes()
         var totalCount = 0
 
@@ -231,19 +272,19 @@ final class SyncEngine {
         // mid-pass, a single bad HealthKit query — abandoned every type after it in
         // iteration order. With background delivery disabled this pass is the only thing
         // moving data, so an abandoned pass is not retried until the next app open.
-        var failures: [String] = []
+        var failures: [(type: String, error: Error)] = []
         for sampleType in types {
             do {
                 totalCount += try await syncType(sampleType)
             } catch {
-                failures.append(sampleType.identifier)
+                failures.append((sampleType.identifier, error))
                 print("[SyncEngine] Sync failed for \(sampleType.identifier): \(error)")
             }
         }
         if !failures.isEmpty {
             print("[SyncEngine] \(failures.count) of \(types.count) types failed this pass")
         }
-        return totalCount
+        return (totalCount, failures, types.count)
     }
 
     // MARK: - Per-type anchored sync

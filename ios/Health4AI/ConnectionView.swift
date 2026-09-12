@@ -84,7 +84,7 @@ struct ConnectionView: View {
 
     private var supabaseConfigSection: some View {
         Section {
-            LabeledContent("Project URL") {
+            AdaptiveLabeledField("Project URL") {
                 // "Project URL", not an example: a placeholder renders in system blue,
                 // the same blue as the Sign In button, so a sample URL there read as a
                 // configured value. The example lives in the footer instead.
@@ -92,10 +92,9 @@ struct ConnectionView: View {
                     .autocapitalization(.none)
                     .autocorrectionDisabled()
                     .keyboardType(.URL)
-                    .multilineTextAlignment(.trailing)
                     .font(.system(.caption, design: .monospaced))
             }
-            LabeledContent("Anon Key") {
+            AdaptiveLabeledField("Anon Key") {
                 SecureFieldToggle(placeholder: "eyJ…", userDefaultsKey: "hkb.supabaseAnonKey")
             }
         } header: {
@@ -279,6 +278,45 @@ struct ConnectionView: View {
                     testResult = TestResult(kind: .failure, message: message)
                     isTesting = false
                 }
+            }
+        }
+    }
+}
+
+// MARK: - AdaptiveLabeledField
+
+/// `LabeledContent` on one row, until the text gets big enough that it cannot be.
+///
+/// At `accessibilityXXXL` the row layout truncated the Project URL to `https://abc…`, so a
+/// user who mistyped it could not read it back to find the mistake — and that value is the
+/// single thing standing between them and a working sync. Above `.xLarge` the label moves
+/// above the field and the value gets the full width. design.md requires XXXL verification.
+private struct AdaptiveLabeledField<Content: View>: View {
+    private let label: String
+    private let content: () -> Content
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(_ label: String, @ViewBuilder content: @escaping () -> Content) {
+        self.label = label
+        self.content = content
+    }
+
+    var body: some View {
+        // `.xxLarge`, not `.accessibility1`. The gate measured truncation at
+        // accessibilityXXXL, but DynamicTypeSize runs xLarge → xxLarge → xxxLarge before
+        // the accessibility sizes even begin, and a long Supabase URL loses the tail well
+        // before then. Stacking early costs a plain non-accessibility user nothing.
+        if dynamicTypeSize >= .xxLarge {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                content().multilineTextAlignment(.leading)
+            }
+        } else {
+            LabeledContent(label) {
+                content().multilineTextAlignment(.trailing)
             }
         }
     }
