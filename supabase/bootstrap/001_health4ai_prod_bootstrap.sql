@@ -70,11 +70,16 @@ CREATE TABLE IF NOT EXISTS public.healthkit_daily_summaries (
   max_value     float8,
   sum_value     float8,
   sample_count  integer,
-  unit          text,
+  -- NOT NULL because `unit` is part of the unique key below, and NULL <> NULL would
+  -- let two NULL-unit rows for one day both insert and never upsert.
+  unit          text        NOT NULL DEFAULT '',
   created_at    timestamptz NOT NULL DEFAULT now(),
   summarized_at timestamptz NOT NULL DEFAULT now(),
+  -- `unit` is in the key: a daily summary is per (user, metric_type, date, UNIT).
+  -- Without it the summariser summed a metric across units and stamped the total with
+  -- MAX(unit) — 0.032 kg + 32 g of protein became 32.032 kg. Register D338.
   CONSTRAINT healthkit_daily_summaries_user_metric_date_key
-    UNIQUE (user_id, metric_type, summary_date)
+    UNIQUE (user_id, metric_type, summary_date, unit)
 );
 
 CREATE INDEX IF NOT EXISTS healthkit_daily_summaries_user_date_idx

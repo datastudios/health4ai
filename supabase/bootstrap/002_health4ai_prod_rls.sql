@@ -120,17 +120,22 @@ BEGIN
   INSERT INTO public.healthkit_daily_summaries
     (user_id, metric_type, summary_date, avg_value, min_value, max_value,
      sum_value, sample_count, unit)
+  -- GROUP BY carries `unit`, and the unit is no longer invented with max(). Without
+  -- this a day holding one metric in two units summed across both and was labelled
+  -- with whichever string sorted higher. Register D338.
   SELECT user_id, metric_type, (started_at AT TIME ZONE v_tz)::date,
-         avg(value), min(value), max(value), sum(value), count(*), max(unit)
+         avg(value), min(value), max(value), sum(value), count(*), COALESCE(unit, '')
   FROM public.healthkit_metrics
   WHERE user_id = p_user_id AND metric_type = p_metric_type
     AND started_at < p_cutoff::timestamptz
-  GROUP BY user_id, metric_type, (started_at AT TIME ZONE v_tz)::date
-  ON CONFLICT (user_id, metric_type, summary_date) DO UPDATE SET
+  GROUP BY user_id, metric_type, (started_at AT TIME ZONE v_tz)::date, COALESCE(unit, '')
+  ON CONFLICT (user_id, metric_type, summary_date, unit) DO UPDATE SET
     avg_value = EXCLUDED.avg_value, min_value = EXCLUDED.min_value,
     max_value = EXCLUDED.max_value, sum_value = EXCLUDED.sum_value,
-    sample_count = EXCLUDED.sample_count, unit = EXCLUDED.unit,
+    sample_count = EXCLUDED.sample_count,
     summarized_at = now();
+    -- `unit` is not reassigned: it is part of the conflict key, so EXCLUDED.unit is
+    -- always the existing value.
 
   GET DIAGNOSTICS v_summary_days = ROW_COUNT;
 
