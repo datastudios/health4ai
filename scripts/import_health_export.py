@@ -34,7 +34,33 @@ MGMT_HEADERS = {
 }
 
 BATCH_SIZE = 2000  # rows per SQL INSERT — Management API has no PostgREST timeout
-CHECKPOINT_FILE = os.path.join(os.path.dirname(__file__), ".import_checkpoint")
+# Versioned: v2 stopped counting refused activity records, so a v1 row number points past
+# records a v1 run never inserted. A different name means an old checkpoint is never read.
+CHECKPOINT_FILE = os.path.join(os.path.dirname(__file__), ".import_checkpoint.v2")
+
+# Activity types that several devices record at the same moment. An iPhone in the pocket and
+# a Watch on the wrist both count the same steps; Apple Health shows one figure only because
+# its statistics queries take one source per stretch of time, and export.xml carries every
+# source's raw records with no way to redo that merge. Summing them overstated steps by 67%
+# across 2021 on real data. The app syncs these as HealthKit's merged hourly totals instead,
+# so this importer refuses them rather than writing per-device rows beside those totals.
+# Keep in step with HealthKitManager.doubleCountedActivityIdentifiers. Register D361.
+DOUBLE_COUNTED_ACTIVITY_TYPES = frozenset({
+    "HKQuantityTypeIdentifierStepCount",
+    "HKQuantityTypeIdentifierDistanceWalkingRunning",
+    "HKQuantityTypeIdentifierDistanceCycling",
+    "HKQuantityTypeIdentifierDistanceSwimming",
+    "HKQuantityTypeIdentifierDistanceWheelchair",
+    "HKQuantityTypeIdentifierDistanceDownhillSnowSports",
+    "HKQuantityTypeIdentifierPushCount",
+    "HKQuantityTypeIdentifierSwimmingStrokeCount",
+    "HKQuantityTypeIdentifierFlightsClimbed",
+    "HKQuantityTypeIdentifierActiveEnergyBurned",
+    "HKQuantityTypeIdentifierBasalEnergyBurned",
+    "HKQuantityTypeIdentifierAppleExerciseTime",
+    "HKQuantityTypeIdentifierAppleMoveTime",
+    "HKQuantityTypeIdentifierAppleStandTime",
+})
 
 # Only HKRecord types we care about (skip clinical, ECG, audiogram, etc.)
 # Keeps "HKQuantity..." and "HKCategory..." types; skips workouts (different schema)
@@ -161,6 +187,7 @@ def main():
     batch: list[dict] = []
     total_parsed = 0
     total_skipped = 0
+    total_refused_activity = 0
     total_inserted = 0
     start_time = time.time()
 
@@ -181,6 +208,14 @@ def main():
             # Skip non-quantity/category types
             if any(metric_type.startswith(p) for p in SKIP_PREFIXES):
                 total_skipped += 1
+                elem.clear()
+                continue
+
+            # Refused before total_parsed moves. That changes what a checkpoint's row number
+            # means, which is why CHECKPOINT_FILE carries a version: resuming from a count
+            # written by the old script would skip records that run never inserted.
+            if metric_type in DOUBLE_COUNTED_ACTIVITY_TYPES:
+                total_refused_activity += 1
                 elem.clear()
                 continue
 
@@ -257,6 +292,10 @@ def main():
     print(f"\n\nDone in {elapsed:.0f}s ({elapsed/60:.1f} min)")
     print(f"  Parsed:  {total_parsed:,} records")
     print(f"  Skipped: {total_skipped:,} (workouts/clinical)")
+    print(f"  Refused: {total_refused_activity:,} activity records (steps, distance, energy, exercise, stand)")
+    if total_refused_activity:
+        print("           These are counted by several devices at once and cannot be merged from an")
+        print("           export. Sync them from the Health4AI app, which sends HealthKit's merged totals.")
     print(f"  Batched: {total_inserted:,} rows {'(dry run — not inserted)' if args.dry_run else 'inserted'}")
     print(f"\nTop metric types:")
     for mt, cnt in sorted(type_counts.items(), key=lambda x: -x[1])[:15]:

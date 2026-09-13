@@ -675,3 +675,174 @@ extension HKWorkoutActivityType {
         }
     }
 }
+
+// MARK: - Cumulative types: HealthKit's own merged hourly totals
+
+extension HealthKitManager {
+
+    /// Stored in `source_device` for a total HealthKit computed across every source.
+    static let allSourcesLabel = "HealthKit (all sources)"
+
+    enum HourlyTotalsError: LocalizedError {
+        case calendarArithmetic
+        case noStatistics
+
+        var errorDescription: String? {
+            switch self {
+            case .calendarArithmetic: return "Could not compute an hour boundary"
+            case .noStatistics:       return "HealthKit returned no statistics"
+            }
+        }
+    }
+
+    /// Activity types that several devices record at the same moment. Keep in step with
+    /// DOUBLE_COUNTED_ACTIVITY_TYPES in scripts/import_health_export.py.
+    ///
+    /// Deliberately a list, not `aggregationStyle == .cumulative`. Nutrition, insulin and
+    /// the other cumulative types are logged one entry at a time by one app, are not
+    /// double-counted, and carry metadata (meal, insulin delivery reason, user-entered)
+    /// that an hourly total would throw away for good.
+    static let doubleCountedActivityIdentifiers: Set<String> = [
+        HKQuantityTypeIdentifier.stepCount.rawValue,
+        HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue,
+        HKQuantityTypeIdentifier.distanceCycling.rawValue,
+        HKQuantityTypeIdentifier.distanceSwimming.rawValue,
+        HKQuantityTypeIdentifier.distanceWheelchair.rawValue,
+        HKQuantityTypeIdentifier.distanceDownhillSnowSports.rawValue,
+        HKQuantityTypeIdentifier.pushCount.rawValue,
+        HKQuantityTypeIdentifier.swimmingStrokeCount.rawValue,
+        HKQuantityTypeIdentifier.flightsClimbed.rawValue,
+        HKQuantityTypeIdentifier.activeEnergyBurned.rawValue,
+        HKQuantityTypeIdentifier.basalEnergyBurned.rawValue,
+        HKQuantityTypeIdentifier.appleExerciseTime.rawValue,
+        HKQuantityTypeIdentifier.appleMoveTime.rawValue,
+        HKQuantityTypeIdentifier.appleStandTime.rawValue,
+    ]
+
+    /// Whether a type syncs as hourly totals instead of individual samples.
+    ///
+    /// Summing individual samples double-counts whenever two devices record the same
+    /// activity: an iPhone in the pocket and a Watch on the wrist both count the same steps,
+    /// and Apple Health shows one figure only because its statistics queries take one source
+    /// per stretch of time. Measured on real data 2026-09-12: across 2021 the stored sample
+    /// sums averaged 13,392 steps/day against ~8,015 once iPhone samples overlapping Watch
+    /// samples were dropped, +67%. Only the HKStatisticsQuery family applies that merge, so
+    /// for these types the app posts what it returns. Register D361.
+    static func syncsAsHourlyTotals(_ type: HKSampleType) -> Bool {
+        type is HKQuantityType && doubleCountedActivityIdentifiers.contains(type.identifier)
+    }
+
+    /// Hour boundaries are UTC, never the device's zone. In local time the same instant
+    /// floors to a different `started_at` after a move to a half-hour zone (India, +5:30),
+    /// and the DST fall-back hour is ambiguous; either one produces a second row under a
+    /// new upsert key instead of replacing the first. Every whole-hour zone, America/New_York
+    /// included, puts its day boundaries on UTC hours, so daily totals are unaffected.
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        return calendar
+    }()
+
+    /// One HealthSample per UTC hour touched by `samples`, carrying HealthKit's merged
+    /// cumulative sum for that WHOLE hour.
+    ///
+    /// The whole hour, not the new samples' share of it, is what makes a re-post idempotent:
+    /// the ingest upsert key is (user, metric_type, source_device, started_at), so a later
+    /// sample in the same hour replaces that hour's total instead of adding to it.
+    ///
+    /// NOT corrected: a sample DELETED from Health. The anchored query reports a deletion
+    /// only as a UUID with no dates, so nothing here knows which hour to re-post, and the
+    /// stored total keeps the deleted amount until a new sample lands in that hour. That gap
+    /// predates hourly totals (per-device rows were never deleted either). Register D361.
+    func hourlyTotals(for type: HKQuantityType, touchedBy samples: [HKSample]) async throws -> [HealthSample] {
+        let calendar = Self.utcCalendar
+        var hours = Set<Date>()
+        var unitString: String?
+
+        for sample in samples {
+            if unitString == nil, let quantitySample = sample as? HKQuantitySample {
+                unitString = bestUnit(for: type, quantity: quantitySample.quantity).1
+            }
+            guard var hour = calendar.dateInterval(of: .hour, for: sample.startDate)?.start else {
+                throw HourlyTotalsError.calendarArithmetic
+            }
+            // Every hour the sample overlaps. A sample ending exactly on a boundary does
+            // not touch the next hour; a zero-length sample still touches its own.
+            repeat {
+                hours.insert(hour)
+                guard let next = calendar.date(byAdding: .hour, value: 1, to: hour) else {
+                    throw HourlyTotalsError.calendarArithmetic
+                }
+                hour = next
+            } while hour < sample.endDate
+        }
+        guard let unitString, !hours.isEmpty else { return [] }
+
+        // Query in spans of at most 31 days. A first-sync page can touch hours years apart,
+        // and one collection query across all of them would build every empty hour between.
+        let sorted = hours.sorted()
+        var results: [HealthSample] = []
+        var chunkStart = 0
+        while chunkStart < sorted.count {
+            guard let limit = calendar.date(byAdding: .day, value: 31, to: sorted[chunkStart]) else {
+                throw HourlyTotalsError.calendarArithmetic
+            }
+            var chunkEnd = chunkStart
+            while chunkEnd + 1 < sorted.count, sorted[chunkEnd + 1] < limit { chunkEnd += 1 }
+
+            let first = sorted[chunkStart]
+            guard let end = calendar.date(byAdding: .hour, value: 1, to: sorted[chunkEnd]) else {
+                throw HourlyTotalsError.calendarArithmetic
+            }
+            let collection = try await hourlyStatistics(for: type, from: first, to: end)
+
+            for hour in sorted[chunkStart...chunkEnd] {
+                guard let hourEnd = calendar.date(byAdding: .hour, value: 1, to: hour) else {
+                    throw HourlyTotalsError.calendarArithmetic
+                }
+                var value = 0.0
+                var unit = unitString
+                if let sum = collection.statistics(for: hour)?.sumQuantity() {
+                    (value, unit) = bestUnit(for: type, quantity: sum)
+                }
+                results.append(HealthSample(
+                    metricType: type.identifier,
+                    value: value,
+                    unit: unit,
+                    sourceDevice: Self.allSourcesLabel,
+                    startedAt: hour,
+                    endedAt: hourEnd,
+                    metadata: ["h4ai_aggregation": .string("hkstatistics_cumulative_sum_hourly")]
+                ))
+            }
+            chunkStart = chunkEnd + 1
+        }
+        return results
+    }
+
+    private func hourlyStatistics(
+        for type: HKQuantityType,
+        from start: Date,
+        to end: Date
+    ) async throws -> HKStatisticsCollection {
+        try await withCheckedThrowingContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type,
+                quantitySamplePredicate: HKQuery.predicateForSamples(withStart: start, end: end, options: []),
+                options: .cumulativeSum,
+                anchorDate: start,
+                intervalComponents: DateComponents(hour: 1)
+            )
+            query.initialResultsHandler = { _, collection, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else if let collection {
+                    continuation.resume(returning: collection)
+                } else {
+                    continuation.resume(throwing: HourlyTotalsError.noStatistics)
+                }
+            }
+            store.execute(query)
+        }
+    }
+}

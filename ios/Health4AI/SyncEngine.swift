@@ -322,7 +322,16 @@ final class SyncEngine {
                 return total
             }
 
-            let healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
+            // Cumulative types post HealthKit's merged hourly totals, never raw samples:
+            // summing raw samples counts an iPhone and a Watch twice. See
+            // HealthKitManager.syncsAsHourlyTotals.
+            let healthSamples: [HealthSample]
+            if let quantityType = sampleType as? HKQuantityType,
+               HealthKitManager.syncsAsHourlyTotals(quantityType) {
+                healthSamples = try await hkManager.hourlyTotals(for: quantityType, touchedBy: samples)
+            } else {
+                healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
+            }
             if !healthSamples.isEmpty {
                 let batches = stride(from: 0, to: healthSamples.count, by: Self.batchSize).map {
                     Array(healthSamples[$0..<min($0 + Self.batchSize, healthSamples.count)])
@@ -330,7 +339,10 @@ final class SyncEngine {
                 for batch in batches {
                     try await postSamples(batch, token: token, serverURL: serverURL)
                 }
-                total += healthSamples.count
+                // HealthKit samples, not rows posted. An hourly total is re-posted every time
+                // the observer fires within that hour, so counting rows would grow the
+                // lifetime figure a dozen times over for one stored row.
+                total += HealthKitManager.syncsAsHourlyTotals(sampleType) ? samples.count : healthSamples.count
             }
 
             // Advance ONLY after the page's rows are posted, so a failure mid-page

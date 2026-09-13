@@ -295,7 +295,15 @@ final class BulkExportManager {
             }
 
             if !samples.isEmpty {
-                let healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
+                // Same rule as live sync: cumulative types post HealthKit's merged hourly
+                // totals, never raw samples. See HealthKitManager.syncsAsHourlyTotals.
+                let healthSamples: [HealthSample]
+                if let quantityType = sampleType as? HKQuantityType,
+                   HealthKitManager.syncsAsHourlyTotals(quantityType) {
+                    healthSamples = try await hkManager.hourlyTotals(for: quantityType, touchedBy: samples)
+                } else {
+                    healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
+                }
 
                 if !healthSamples.isEmpty {
                     let batchSize = SyncEngine.batchSize
