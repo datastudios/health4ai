@@ -30,6 +30,46 @@ interface IngestPayload {
 
 const MAX_BODY_BYTES = 5 * 1024 * 1024
 const MAX_METADATA_BYTES = 4 * 1024
+const HOUR_MS = 3_600_000
+
+// Merged hourly totals. For activity types that several devices record at the same moment, the
+// app sends HealthKit's merged sum per UTC hour under this source label instead of each
+// device's samples, because summing both devices counted the same steps twice (+67% across
+// 2021 on real data). Such an hour must REPLACE that hour's per-device rows, or it is summed
+// on top of them; health4ai_replace_merged_hours does both in one transaction. Register D361.
+// Keep in step with HealthKitManager.allSourcesLabel / doubleCountedActivityIdentifiers (iOS)
+// and DOUBLE_COUNTED_ACTIVITY_TYPES (scripts/import_health_export.py).
+const MERGED_SOURCE = 'HealthKit (all sources)'
+const MERGED_HOUR_TYPES = new Set([
+  'HKQuantityTypeIdentifierStepCount',
+  'HKQuantityTypeIdentifierDistanceWalkingRunning',
+  'HKQuantityTypeIdentifierDistanceCycling',
+  'HKQuantityTypeIdentifierDistanceSwimming',
+  'HKQuantityTypeIdentifierDistanceWheelchair',
+  'HKQuantityTypeIdentifierDistanceDownhillSnowSports',
+  'HKQuantityTypeIdentifierPushCount',
+  'HKQuantityTypeIdentifierSwimmingStrokeCount',
+  'HKQuantityTypeIdentifierFlightsClimbed',
+  'HKQuantityTypeIdentifierActiveEnergyBurned',
+  'HKQuantityTypeIdentifierBasalEnergyBurned',
+  'HKQuantityTypeIdentifierAppleExerciseTime',
+  'HKQuantityTypeIdentifierAppleMoveTime',
+  'HKQuantityTypeIdentifierAppleStandTime',
+])
+
+// Reported on EVERY 2xx, including the empty batch the app sends to ask. An older deployment of
+// this function would store merged hours WITHOUT deleting the per-device rows, which is worse than
+// not merging at all, so the app sends them only to a server that lists this.
+const CAPABILITIES = ['merged_hours_v1']
+
+// A merged row's timestamps decide which rows are DELETED, so JavaScript and Postgres must read them
+// as the same instant. Date.parse does not guarantee that: it truncates past milliseconds, where
+// Postgres keeps microseconds, and it puts two-digit years 50-99 in the 1900s where Postgres puts
+// 00-69 in the 2000s. Either lets the hour check pass on one instant while the delete runs on
+// another. Merged rows therefore need a strict ISO-8601 form, and the function receives the
+// canonical toISOString() of the checked instant rather than the client's string. (Security
+// review 2026-09-13.)
+const STRICT_ISO_8601 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/
 
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST') {
@@ -88,7 +128,7 @@ Deno.serve(async (req: Request) => {
   }
 
   if (!Array.isArray(payload.samples) || payload.samples.length === 0) {
-    return json({ inserted: 0 })
+    return json({ inserted: 0, capabilities: CAPABILITIES })
   }
 
   // Validate sample count (max 1000 per request)
@@ -126,6 +166,28 @@ Deno.serve(async (req: Request) => {
     if (s.ended_at != null && (typeof s.ended_at !== 'string' || s.ended_at.length > 64 || Number.isNaN(Date.parse(s.ended_at)))) {
       return json({ error: 'ended_at must be an ISO-8601 timestamp or null' }, 400)
     }
+    // A merged row deletes every per-device row whose started_at falls in its hour, so its shape is
+    // enforced rather than trusted: exactly one whole UTC hour, of a type that is merged at all.
+    // Anything looser would let a malformed row delete a stretch of per-device data it does not
+    // replace, or turn instantaneous readings like heart rate into a meaningless hourly sum.
+    if (s.source_device === MERGED_SOURCE) {
+      const start = Date.parse(s.started_at)
+      if (
+        !MERGED_HOUR_TYPES.has(s.metric_type) ||
+        !STRICT_ISO_8601.test(s.started_at) ||
+        start % HOUR_MS !== 0 ||
+        typeof s.ended_at !== 'string' ||
+        !STRICT_ISO_8601.test(s.ended_at) ||
+        Date.parse(s.ended_at) !== start + HOUR_MS
+      ) {
+        return json({ error: 'Merged rows must cover exactly one UTC hour of a merged activity type' }, 400)
+      }
+      // A string, boolean or object value fails the whole transaction in Postgres as a 500, which the
+      // app retries; the strings "NaN" and "Infinity" would be stored and poison every later sum.
+      if (typeof s.value !== 'number' || !Number.isFinite(s.value)) {
+        return json({ error: 'Merged rows must carry a finite numeric value' }, 400)
+      }
+    }
   }
 
   // Attach user_id to all rows
@@ -162,29 +224,55 @@ Deno.serve(async (req: Request) => {
     seen.set(JSON.stringify([row.metric_type, row.source_device, normTs]), row)
   }
   const dedupedRows = Array.from(seen.values())
+  const deviceRows = dedupedRows.filter((r) => r.source_device !== MERGED_SOURCE)
+  const mergedRows = dedupedRows.filter((r) => r.source_device === MERGED_SOURCE)
 
-  // Use service role to bypass RLS for upsert (adminClient already defined above)
-  const { error, count } = await adminClient
-    .from('healthkit_metrics')
-    .upsert(dedupedRows, {
-      onConflict: 'user_id,metric_type,source_device,started_at',
-      ignoreDuplicates: false,
-      count: 'exact',
-    })
+  let inserted = 0
+  let replaced = 0
 
-  if (error) {
-    // 23505 means a unique index OTHER than the upsert arbiter was hit — on a project mid-migration,
-    // the legacy 3-column key (supabase/ops/2026-09-12_prod_step*.sql). Logged distinctly so a
-    // deploy-window hit is identifiable afterwards. Error code only; never row contents.
-    if (error.code === '23505') {
-      console.error('Upsert failed: unique violation outside the upsert key', { code: error.code })
-    } else {
+  if (deviceRows.length > 0) {
+    // Use service role to bypass RLS for upsert (adminClient already defined above)
+    const { error, count } = await adminClient
+      .from('healthkit_metrics')
+      .upsert(deviceRows, {
+        onConflict: 'user_id,metric_type,source_device,started_at',
+        ignoreDuplicates: false,
+        count: 'exact',
+      })
+    if (error) {
+      // Error code only; never row contents.
       console.error('Upsert failed', { code: error.code })
+      return json({ error: 'Unable to store samples' }, 500)
     }
-    return json({ error: 'Unable to store samples' }, 500)
+    inserted += count ?? deviceRows.length
   }
 
-  return json({ inserted: count ?? dedupedRows.length })
+  if (mergedRows.length > 0) {
+    // user_id comes from the verified JWT above, never from the body. The SQL function is
+    // EXECUTE-able by the service role only, precisely because it takes a user_id parameter.
+    const { data, error } = await adminClient.rpc('health4ai_replace_merged_hours', {
+      p_user_id: userId,
+      // Canonical timestamps: the instant that passed the hour check, not the client's spelling of it.
+      p_rows: mergedRows.map(({ metric_type, value, unit, started_at, metadata }) => {
+        const start = Date.parse(started_at)
+        return {
+          metric_type, value, unit, metadata,
+          started_at: new Date(start).toISOString(),
+          ended_at: new Date(start + HOUR_MS).toISOString(),
+        }
+      }),
+    })
+    const result = Array.isArray(data) ? data[0] : null
+    if (error || !result) {
+      // No result row is a failure, not zero: the function always returns exactly one.
+      console.error('Merged hour replace failed', { code: error?.code ?? 'no_result' })
+      return json({ error: 'Unable to store samples' }, 500)
+    }
+    inserted += Number(result.written_count)
+    replaced += Number(result.deleted_count)
+  }
+
+  return json({ inserted, replaced, capabilities: CAPABILITIES })
 })
 
 /**
