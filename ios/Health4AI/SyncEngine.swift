@@ -38,6 +38,55 @@ actor SyncMutex {
     }
 }
 
+/// Whether a server's ingest function replaces per-device rows when it stores a merged hour.
+///
+/// An older deployment stores merged hours WITHOUT deleting that hour's per-device rows, so the
+/// same steps would be counted by both, which is worse than not merging at all. The app sends
+/// merged hours only where the function has answered `merged_hours_v1`. It asks once per launch
+/// per endpoint, so a function updated while the app runs is picked up at the next launch, and an
+/// older function redeployed over a newer one is noticed too. Register D361.
+actor MergedHoursCapability {
+    static let shared = MergedHoursCapability()
+    private var answers: [String: Bool] = [:]
+
+    func isSupported(serverURL: String, token: String) async throws -> Bool {
+        if let known = answers[serverURL] { return known }
+        let supported = try await Self.ask(serverURL: serverURL, token: token)
+        answers[serverURL] = supported
+        return supported
+    }
+
+    /// An empty batch writes nothing and every version of the function answers it after
+    /// verifying the token. Only a 2xx is an answer; anything else throws, so a network failure
+    /// is never mistaken for "not supported".
+    private static func ask(serverURL: String, token: String) async throws -> Bool {
+        guard let url = URL(string: serverURL) else { throw SyncError.invalidURL }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.httpBody = Data(#"{"samples":[]}"#.utf8)
+        // Same as postSamples. Shorter, a network slow enough to time out here but not there
+        // would fail the page on the check while the post itself would have gone through.
+        request.timeoutInterval = 60
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw SyncError.invalidResponse }
+        switch http.statusCode {
+        case 200...299: return parseCapabilities(data).contains("merged_hours_v1")
+        case 401:       throw SyncError.unauthorized
+        default:        throw SyncError.httpError(http.statusCode)
+        }
+    }
+
+    /// A 2xx body that is not JSON, or JSON without `capabilities`, declares none. That is the
+    /// honest reading of a REST endpoint or an older function, not a parse failure to hide.
+    static func parseCapabilities(_ data: Data) -> Set<String> {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let capabilities = object["capabilities"] as? [String] else { return [] }
+        return Set(capabilities)
+    }
+}
+
 final class SyncEngine {
 
     @MainActor static let shared = SyncEngine()
@@ -287,6 +336,21 @@ final class SyncEngine {
         return (totalCount, failures, types.count)
     }
 
+    // MARK: - Merged hourly totals
+
+    /// Whether this server may be sent merged hours. Also publishes the answer, so Home can say
+    /// when step and energy totals are still being counted per device.
+    func mergedHoursAllowed(serverURL: String, token: String) async throws -> Bool {
+        let supported = try await MergedHoursCapability.shared.isSupported(serverURL: serverURL, token: token)
+        await MainActor.run {
+            // Only an answer about the endpoint still configured. A check for the old URL that
+            // resolves after the user switched projects would otherwise label the new one.
+            guard syncState.resolvedEndpointURL == serverURL else { return }
+            syncState.serverLacksMergedHours = !supported
+        }
+        return supported
+    }
+
     // MARK: - Per-type anchored sync
 
     /// Queries new samples since the last anchor for `sampleType`, posts them,
@@ -322,12 +386,16 @@ final class SyncEngine {
                 return total
             }
 
-            // Cumulative types post HealthKit's merged hourly totals, never raw samples:
-            // summing raw samples counts an iPhone and a Watch twice. See
-            // HealthKitManager.syncsAsHourlyTotals.
+            // Double-counted activity types post HealthKit's merged hourly totals, never raw
+            // samples: summing raw samples counts an iPhone and a Watch twice. Only to a server
+            // that replaces per-device rows with them. See HealthKitManager.syncsAsHourlyTotals
+            // and MergedHoursCapability.
+            var usesMergedHours = false
+            if HealthKitManager.syncsAsHourlyTotals(sampleType) {
+                usesMergedHours = try await mergedHoursAllowed(serverURL: serverURL, token: token)
+            }
             let healthSamples: [HealthSample]
-            if let quantityType = sampleType as? HKQuantityType,
-               HealthKitManager.syncsAsHourlyTotals(quantityType) {
+            if usesMergedHours, let quantityType = sampleType as? HKQuantityType {
                 healthSamples = try await hkManager.hourlyTotals(for: quantityType, touchedBy: samples)
             } else {
                 healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
@@ -342,7 +410,7 @@ final class SyncEngine {
                 // HealthKit samples, not rows posted. An hourly total is re-posted every time
                 // the observer fires within that hour, so counting rows would grow the
                 // lifetime figure a dozen times over for one stored row.
-                total += HealthKitManager.syncsAsHourlyTotals(sampleType) ? samples.count : healthSamples.count
+                total += usesMergedHours ? samples.count : healthSamples.count
             }
 
             // Advance ONLY after the page's rows are posted, so a failure mid-page

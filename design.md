@@ -21,7 +21,7 @@ and increased-contrast for free.
 | Secondary text | `.secondary` | captions, sublabels |
 | Brand accent | `.pink` | the ONE prominent action per screen |
 | Healthy | `.green` | connected, complete |
-| Attention | `.orange` | partial data, stalled import |
+| Attention | `.orange` | partial data, server update needed, stalled import |
 | Failure | `.red` | sync error, destructive rows |
 | In progress | `.blue` | actively syncing |
 
@@ -46,9 +46,11 @@ and increased-contrast for free.
 
 ## Status colour is a single signal
 
-`statusColor` in `HomeView.swift` is the one place that maps state to colour, and the
-status card's icon, title, border and subtitle all read from it. Precedence, highest
-first: syncing → error → **partial data** → connection health.
+`statusColor` in `HomeView.swift` is the one place that maps state to colour. The status
+card's icon and border read from it; its title and caption stay `.primary` and `.secondary`
+(rule 1 above). Precedence, highest first: syncing → error → **partial data** →
+**server update needed** → connection health. Partial data and server update needed are
+shown, and coloured, only while the connection is healthy.
 
 **Never add a second, independent colour path for the same state.** The bug this ordering
 exists to prevent: the headline said green "Active" while the card below it named four
@@ -92,6 +94,11 @@ so live counters do not jitter.
 **Verify at `.accessibilityXXXL` on a 375pt width.** A concatenated `Text` containing a
 formatted number broke *mid-number* there and rendered a different figure — split stacked
 values into separate `Text` views rather than joining with a separator.
+
+**A decorative trailing icon beside a status title is removed at `isAccessibilitySize`;** the
+label's own symbol carries the state. Kept, the status card's `.title` antenna claimed a
+column and broke "Server update needed" mid-word ("Serve / r / up- / date") at
+`.accessibilityXXXL` on 375pt, measured 2026-09-13.
 
 ## Cards
 

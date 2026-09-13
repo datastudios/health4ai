@@ -115,3 +115,29 @@ Health permission as an empty result, indistinguishable from a day with no data.
 It creates two throwaway users, syncs samples as each, proves neither can read the other's rows or
 write directly, deletes both, and exits non-zero if nothing was actually written. Run it only
 against a project you own. The service_role key ends up in your shell history — clear it after.
+
+## Updating an existing project
+
+If your project was set up before 2026-09-13, do these in order:
+
+1. Pull the latest code in your health4ai clone: `git pull`. Redeploying from an old clone
+   ships the old function again.
+2. Run [`supabase/upgrades/2026-09-13_merged_hours.sql`](../supabase/upgrades/2026-09-13_merged_hours.sql)
+   in the Supabase SQL editor.
+3. Redeploy the function:
+
+   ```bash
+   supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no-verify-jwt
+   ```
+
+4. Force-quit and reopen the app. It asks your server what it supports once per launch.
+
+Until you do, the app's Home screen says **Server update needed**. An iPhone and an Apple Watch
+both count the same steps. Apple Health shows one figure because it merges them, and the current
+app sends that merged total per hour, but only to a function that removes the per-device rows
+those hours replace. An older function cannot, so the app keeps sending per-device samples and
+steps, distance and energy are counted twice wherever both devices recorded them.
+
+After the update the app re-sends those activity types' history once. Each hour it sends replaces
+that hour's per-device rows, so totals correct themselves as the import runs. Don't re-run the
+bootstrap files on an existing project: they create policies that already exist and fail.

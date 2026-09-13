@@ -34,6 +34,9 @@ struct ConnectionView: View {
                 Task { @MainActor in
                     syncState.isAuthenticated = false
                     syncState.userEmail = nil
+                    // A verdict about the server just signed out of must not show against the
+                    // next one. The next sync asks the new server afresh.
+                    syncState.serverLacksMergedHours = false
                 }
             }
             Button("Cancel", role: .cancel) {}

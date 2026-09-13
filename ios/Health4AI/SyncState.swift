@@ -108,6 +108,11 @@ final class SyncState: ObservableObject {
     /// See `BulkExportManager.alwaysExpectedIdentifiers`.
     @Published var emptyExpectedMetricNames: [String] = []
 
+    /// The server answered without `merged_hours_v1`, so step, distance and energy totals are
+    /// still sent per device and summed twice wherever an iPhone and a Watch both counted.
+    /// Register D361.
+    @Published var serverLacksMergedHours = false
+
     // MARK: - Connection configuration
 
     @Published var connectionType: ConnectionType {
@@ -116,12 +121,19 @@ final class SyncState: ObservableObject {
 
     /// Supabase: base project URL, e.g. https://abc123.supabase.co
     @Published var supabaseProjectURL: String {
-        didSet { UserDefaults.standard.set(supabaseProjectURL, forKey: Keys.supabaseProjectURL) }
+        didSet {
+            UserDefaults.standard.set(supabaseProjectURL, forKey: Keys.supabaseProjectURL)
+            // A verdict about the previous server says nothing about this one; the next sync asks.
+            if supabaseProjectURL != oldValue { serverLacksMergedHours = false }
+        }
     }
 
     /// Generic REST: full endpoint URL
     @Published var serverURL: String {
-        didSet { UserDefaults.standard.set(serverURL, forKey: Keys.serverURL) }
+        didSet {
+            UserDefaults.standard.set(serverURL, forKey: Keys.serverURL)
+            if serverURL != oldValue { serverLacksMergedHours = false }
+        }
     }
 
     @Published var restAuthType: RestAuthType {
@@ -189,6 +201,19 @@ final class SyncState: ObservableObject {
         self.backfillCompleted = defaults.bool(forKey: Keys.backfillCompleted)
         self.lifetimeSyncedRecords = defaults.integer(forKey: Keys.lifetimeSyncedRecords)
         self.backfillSyncedRecords = defaults.integer(forKey: Keys.backfillProgress)
+
+        #if DEBUG
+        // Screenshot state for the design gate: signed in, data flowing, server without merged
+        // hours. The real state needs a keychain session and an old server, which a simulator
+        // does not have. DEBUG builds only, launch argument only, and nothing is persisted:
+        // didSet does not fire during init. Xcode Cloud archives Release, which never compiles it.
+        if ProcessInfo.processInfo.arguments.contains("-h4aiScreenshotServerUpdateNeeded") {
+            self.isAuthenticated = true
+            self.lifetimeSyncedRecords = max(self.lifetimeSyncedRecords, 1)
+            self.lastSyncDate = Date()
+            self.serverLacksMergedHours = true
+        }
+        #endif
     }
 
     // MARK: - Mutators (called from background threads via MainActor dispatch)
@@ -280,6 +305,7 @@ final class SyncState: ObservableObject {
         lifetimeSyncedRecords = 0
         isAuthenticated = false
         userEmail = nil
+        serverLacksMergedHours = false
     }
 
     // MARK: - Computed helpers

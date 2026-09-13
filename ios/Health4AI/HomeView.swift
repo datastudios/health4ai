@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 
 struct HomeView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @EnvironmentObject var syncState: SyncState
     @Environment(\.scenePhase) private var scenePhase
     @State private var showMCPSetup = false
@@ -136,8 +137,14 @@ struct HomeView: View {
                         .foregroundStyle(.secondary)
                     statusLabel
                 }
-                Spacer()
-                syncIcon
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // Decorative at accessibility sizes: the status label already carries the state's
+                // symbol. Kept, the .title icon claimed a column and broke the headline mid-word
+                // ("Serve / r / up- / date") at accessibilityXXXL on a 375pt width, measured
+                // 2026-09-13 (design.md: verify at .accessibilityXXXL).
+                if !dynamicTypeSize.isAccessibilitySize {
+                    syncIcon
+                }
             }
             Divider()
             HStack {
@@ -169,13 +176,22 @@ struct HomeView: View {
 
     /// Drives every colored element in the status card from one signal, so "connected"
     /// is legible at a glance instead of only being implied by the label text.
+    private static let updateGuideURL = URL(string: "https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md#updating-an-existing-project")!
+
     private var statusColor: Color {
         if syncState.isSyncing { return .blue }
         if syncState.syncError != nil { return .red }
         // Metrics known to be missing outrank a healthy connection: the transport can be
         // fine while the data is not arriving, and the headline must not read green while
         // the app already knows core metrics returned nothing.
-        if !syncState.emptyExpectedMetricNames.isEmpty { return .orange }
+        // Both warnings apply only over a healthy connection, which is also the only time the
+        // label names them. Unconditional, a disconnected card got an orange icon and border
+        // under a "Disconnected" title: two colour signals for one state.
+        let connected = syncState.connectionHealth == .connected
+        if connected && !syncState.emptyExpectedMetricNames.isEmpty { return .orange }
+        // Same rank as missing metrics: the connection works, and the totals it delivers are
+        // wrong. A green headline over double-counted steps is the state this exists to end.
+        if connected && syncState.serverLacksMergedHours { return .orange }
         switch syncState.connectionHealth {
         case .connected:    return .green
         case .stalled:      return .orange
@@ -196,19 +212,50 @@ struct HomeView: View {
         } else {
             let missingCount = syncState.emptyExpectedMetricNames.count
             let isPartial = missingCount > 0 && syncState.connectionHealth == .connected
+            let needsServerUpdate = !isPartial && syncState.serverLacksMergedHours
+                && syncState.connectionHealth == .connected
+            let title = isPartial ? "Partial data"
+                : needsServerUpdate ? "Server update needed"
+                : syncState.connectionHealth.title
+            let symbol = (isPartial || needsServerUpdate)
+                ? "exclamationmark.circle.fill" : syncState.connectionHealth.systemImage
             VStack(alignment: .leading, spacing: 2) {
-                Label(isPartial ? "Partial data" : syncState.connectionHealth.title,
-                      systemImage: isPartial ? "exclamationmark.circle.fill" : syncState.connectionHealth.systemImage)
+                VStack(alignment: .leading, spacing: 2) {
+                    // design.md colour rule 1: the semantic goes on the symbol, the words stay
+                    // .primary. Orange title text measured 2.31:1 on the card ground.
+                    Label {
+                        Text(title).foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: symbol).foregroundStyle(statusColor)
+                    }
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(statusColor)
-                if isPartial {
-                    Text("\(missingCount) core metric\(missingCount == 1 ? " is" : "s are") not being shared")
+                    if isPartial {
+                        Text("\(missingCount) core metric\(missingCount == 1 ? " is" : "s are") not being shared")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if needsServerUpdate {
+                        // The flag says the SERVER lacks merged hours; it knows nothing about the
+                        // user's devices. With no Watch nothing is double-counted, so the claim is
+                        // stated as conditional rather than as a checked fact.
+                        Text("With an Apple Watch, steps, distance and energy are counted twice.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if syncState.connectionHealth == .stalled {
+                        Text("Signed in, but no health records in the last 48 hours")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                // One VoiceOver element for headline + caption. The link below stays separate so
+                // it remains its own actionable element.
+                .accessibilityElement(children: .combine)
+                if needsServerUpdate {
+                    // The function lives in the user's own project and the app cannot update it,
+                    // so the card links to the steps that do (design.md: a recovery instruction
+                    // leads to something usable). Register D361.
+                    Link("How to update healthkit-ingest", destination: Self.updateGuideURL)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if syncState.connectionHealth == .stalled {
-                    Text("Signed in, but no health records in the last 48 hours")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .frame(minHeight: 44, alignment: .leading)
                 }
             }
         }
@@ -220,11 +267,16 @@ struct HomeView: View {
             ProgressView()
                 .scaleEffect(1.2)
         } else {
+            // In a warning state the label's own symbol already says it in orange; a second orange
+            // symbol in the same card repeats one fact twice. Healthy, stalled and disconnected
+            // keep the status colour, where the antenna is the only symbol saying it.
+            let isWarning = syncState.connectionHealth == .connected
+                && (!syncState.emptyExpectedMetricNames.isEmpty || syncState.serverLacksMergedHours)
             Image(systemName: syncState.connectionHealth == .disconnected
                   ? "antenna.radiowaves.left.and.right.slash"
                   : "antenna.radiowaves.left.and.right")
                 .font(.title)
-                .foregroundStyle(statusColor)
+                .foregroundStyle(isWarning ? Color.secondary : statusColor)
         }
     }
 

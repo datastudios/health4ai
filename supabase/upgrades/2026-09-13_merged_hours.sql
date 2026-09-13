@@ -9,7 +9,7 @@
 -- keeps sending per-device samples, which count the same steps twice.
 --
 -- HOW: paste into the Supabase SQL editor and run, THEN redeploy the function:
---   supabase functions deploy healthkit-ingest --no-verify-jwt
+--   supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no-verify-jwt
 -- In that order. The new function calls this one; deployed first, a merged-hours batch fails with a
 -- 500 until this exists (the app retries, nothing is lost). Re-running bootstrap 002 instead fails on
 -- its existing policies. Safe to re-run: CREATE OR REPLACE, and REVOKE/GRANT are idempotent.

@@ -295,11 +295,15 @@ final class BulkExportManager {
             }
 
             if !samples.isEmpty {
-                // Same rule as live sync: cumulative types post HealthKit's merged hourly
-                // totals, never raw samples. See HealthKitManager.syncsAsHourlyTotals.
+                // Same rule as live sync: double-counted activity types post HealthKit's merged
+                // hourly totals, only to a server that replaces per-device rows with them.
+                // See HealthKitManager.syncsAsHourlyTotals and MergedHoursCapability.
+                var usesMergedHours = false
+                if HealthKitManager.syncsAsHourlyTotals(sampleType) {
+                    usesMergedHours = try await syncEngine.mergedHoursAllowed(serverURL: serverURL, token: token)
+                }
                 let healthSamples: [HealthSample]
-                if let quantityType = sampleType as? HKQuantityType,
-                   HealthKitManager.syncsAsHourlyTotals(quantityType) {
+                if usesMergedHours, let quantityType = sampleType as? HKQuantityType {
                     healthSamples = try await hkManager.hourlyTotals(for: quantityType, touchedBy: samples)
                 } else {
                     healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
@@ -409,6 +413,49 @@ final class BulkExportManager {
             await MainActor.run { syncState.backfillCompleted = false }
             print("[BulkExport] Migration: reset stuck high-volume types for retry.")
         }
+    }
+
+    // MARK: - One-time re-send of double-counted activity history as merged hours
+
+    private static let mergedHoursResendKeyPrefix = "hkb.migration.mergedHoursResend.v1."
+
+    /// History for the double-counted activity types was imported as per-device samples, which
+    /// every reader sums (+67% steps across 2021 on real data). Once the server confirms it
+    /// replaces per-device rows with merged hours, those types are re-armed so the next import
+    /// re-sends their history as merged hours, and the server removes the per-device rows hour by
+    /// hour as each one arrives.
+    ///
+    /// Never before the server confirms: re-sending to an older function would ADD merged hours
+    /// on top of the per-device rows. Once per endpoint, because a different endpoint is a
+    /// different database. A failed check leaves the flag unset and is retried next launch; it is
+    /// never read as "not supported". Register D361.
+    func applyMergedHoursResendIfNeeded(syncState: SyncState) async {
+        let serverURL = await MainActor.run { syncState.resolvedEndpointURL }
+        let key = Self.mergedHoursResendKeyPrefix + serverURL
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        do {
+            let token = try await SyncEngine.sharedAuthManager.validToken(serverURL: serverURL)
+            guard try await syncEngine.mergedHoursAllowed(serverURL: serverURL, token: token) else { return }
+        } catch {
+            print("[BulkExport] Merged-hours check failed, retrying next launch: \(error)")
+            return
+        }
+        // Check and reset in ONE main-actor step, and only with no import in flight. An import
+        // snapshots completedTypes when it starts and writes it back as each type finishes, and
+        // ends by latching backfillCompleted: running beside this reset it could re-mark the
+        // re-armed types done, and the one-time flag below would then never let this run again.
+        // Every startBackfill() call is on the main actor, so no import can start in between.
+        let armed = await MainActor.run { () -> Bool in
+            guard currentTask == nil, !syncState.isBackfilling else { return false }
+            resetTypes(HealthKitManager.doubleCountedActivityIdentifiers, syncState: syncState)
+            return true
+        }
+        guard armed else {
+            print("[BulkExport] Import in flight; merged-hours re-send deferred to next launch.")
+            return
+        }
+        UserDefaults.standard.set(true, forKey: key)
+        print("[BulkExport] Re-armed \(HealthKitManager.doubleCountedActivityIdentifiers.count) activity types to re-send history as merged hours.")
     }
 
     /// Republishes the stored empty-type warning at launch, so the state survives a
