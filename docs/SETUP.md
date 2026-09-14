@@ -22,8 +22,9 @@ the tables, row-level security, and grants that deny clients direct access. Heal
 be written through the ingest function in Step 2.
 
 **Do not run `supabase db push`.** The numbered files in `supabase/migrations/` are the history of
-one long-lived project and do not apply to a fresh one — they fail at
-`004_sleep_nightly_view.sql`.
+one long-lived project and do not apply to a fresh one (a duplicated `003` version, then
+`004_sleep_nightly_view.sql`). `supabase/config.toml` sets `[db.migrations] enabled = false` so a
+local `supabase start` or `db reset` does not apply them either.
 
 ## Step 2: Deploy the ingest function
 
@@ -37,6 +38,25 @@ supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no
 
 `--no-verify-jwt` is deliberate. The function checks the caller's Supabase token itself, rejects
 anyone who is not a signed-in user of your project, and writes rows only under that user's ID.
+
+The app sends only `Authorization: Bearer <user token>` to the function, no `apikey` header. If
+you probe it with curl, do the same.
+
+### Optional: a local stack instead of supabase.com
+
+The same path works on a laptop with Docker and the Supabase CLI, which is how this guide was
+verified (2026-09-14, 10 minutes end to end). Do not run `supabase init`: the repo ships
+`supabase/config.toml`. From the repo root:
+
+```bash
+supabase start                                   # prints the local API URL, keys and DB URL
+psql "$(supabase status -o env | grep DB_URL | cut -d= -f2- | tr -d '"')" -v ON_ERROR_STOP=1 -f web/public/schema.sql
+supabase functions serve healthkit-ingest --no-verify-jwt
+```
+
+Then create the user under **Authentication → Users** in the local Studio (or the admin API) and
+point the app and the MCP `.env` at the local URL, anon key and DB URL. `supabase status` prints
+both a legacy anon JWT and an `sb_publishable_` key; either works as the anon key.
 
 ## Step 3: Create your user
 
@@ -117,6 +137,9 @@ Health permission as an empty result, indistinguishable from a day with no data.
 ./scripts/verify_tenant_isolation.py --url https://<ref>.supabase.co \
   --publishable <anon key> --service-role <service_role key>
 ```
+
+`--publishable` takes the project's anon key in either form (`sb_publishable_…` or the legacy
+`eyJ…` JWT).
 
 It creates two throwaway users, syncs samples as each, proves neither can read the other's rows or
 write directly, deletes both, and exits non-zero if nothing was actually written. Run it only

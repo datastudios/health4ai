@@ -2,3 +2,11 @@
 verify_jwt = false
 # Auth is handled inside the function with Supabase auth.getUser(). Gateway JWT
 # verification is disabled only so the function can return its own clear 401 error.
+
+[db.migrations]
+# supabase/migrations/ is the history of the maintainer's long-lived project, not a path to
+# a fresh database: it fails on a clean stack (a duplicated 003 version, then 004's view over
+# a table it never created). `supabase start` and `supabase db reset` would apply it unasked.
+# A fresh project is created from web/public/schema.sql (bootstrap 001+002) instead; see
+# docs/SETUP.md. Verified on a local stack 2026-09-14.
+enabled = false
