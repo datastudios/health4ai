@@ -2,11 +2,21 @@
 """
 Summarize HealthKit raw QUANTITY data older than CUTOFF_MONTHS into daily aggregates.
 
-Calls the server-side public.summarize_healthkit_metric() Postgres function, which
-aggregates + deletes in a single transaction (no row-count cap, no partial-delete
-data-loss risk). The function is invoked via the Supabase Management API SQL endpoint
-rather than PostgREST RPC — PostgREST enforces a short statement timeout that aborts
-the aggregate+delete on multi-million-row types.
+Calls the server-side public.health4ai_compact_metric_v2() Postgres function
+(supabase/ops/2026-09-14_prod_compact_metric_v2.sql, register D362). For the 14 merged-hour
+activity types it RECOMPUTES the daily summary from raw and never deletes raw; for every
+other quantity type it COMPACTS in one statement that merges into an existing day rather
+than replacing it. The previous function, summarize_healthkit_metric, replaced a day's
+summary with whatever raw existed at run time and then deleted that raw, which lost every
+hour that had arrived before a late remainder (measured 2026-09-14: it ran mid re-import).
+Invoked via the Supabase Management API SQL endpoint rather than PostgREST RPC, whose 8 s
+statement timeout aborts multi-million-row types.
+
+DEFAULT IS --merged-only. COMPACT mode for the non-merged types is withheld until the
+re-sent-history residual has a guard: after a fresh install the app re-sends a type's full
+history, and rows re-sent for a day the server already compacted are indistinguishable
+from new data, so a merge would add them twice. Pass --all-types only when no re-import
+is in flight (synced_at quiet for 24 h) and no type has been reset since its last run.
 
 EXCLUDED from summarization (kept raw indefinitely):
   - Category types (HKCategoryTypeIdentifier*) — sleep stages, symptoms. Their value
@@ -109,12 +119,23 @@ def count_raw(metric_type: str, cutoff: str) -> int:
     return int(tail) if tail.isdigit() else 0
 
 
+MERGED_TYPES = frozenset({
+    "HKQuantityTypeIdentifierStepCount", "HKQuantityTypeIdentifierDistanceWalkingRunning",
+    "HKQuantityTypeIdentifierDistanceCycling", "HKQuantityTypeIdentifierDistanceSwimming",
+    "HKQuantityTypeIdentifierDistanceWheelchair", "HKQuantityTypeIdentifierDistanceDownhillSnowSports",
+    "HKQuantityTypeIdentifierPushCount", "HKQuantityTypeIdentifierSwimmingStrokeCount",
+    "HKQuantityTypeIdentifierFlightsClimbed", "HKQuantityTypeIdentifierActiveEnergyBurned",
+    "HKQuantityTypeIdentifierBasalEnergyBurned", "HKQuantityTypeIdentifierAppleExerciseTime",
+    "HKQuantityTypeIdentifierAppleMoveTime", "HKQuantityTypeIdentifierAppleStandTime",
+})  # mirrors c_merged_types in health4ai_compact_metric_v2 and HealthKitManager.doubleCountedActivityIdentifiers
+
+
 def summarize(metric_type: str, cutoff: str) -> dict:
-    """Run summarization via Management API to bypass PostgREST statement timeout."""
+    """Run compaction via Management API to bypass PostgREST statement timeout."""
     import re
     if not re.match(r'^HK[A-Za-z0-9]+TypeIdentifier[A-Za-z0-9]+$', metric_type):
         raise ValueError(f"Unexpected metric_type value: {metric_type!r}")
-    sql = f"SELECT * FROM public.summarize_healthkit_metric($u${USER_ID}$u$, $m${metric_type}$m$, $c${cutoff}$c$)"
+    sql = f"SELECT * FROM public.health4ai_compact_metric_v2($u${USER_ID}$u$, $m${metric_type}$m$, $c${cutoff}$c$)"
     resp = httpx.post(MGMT_URL, headers=MGMT_HEADERS, json={"query": sql}, timeout=600)
     resp.raise_for_status()
     return resp.json()
@@ -123,6 +144,8 @@ def summarize(metric_type: str, cutoff: str) -> dict:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--all-types", action="store_true",
+                        help="also COMPACT the non-merged quantity types (see module docstring before using)")
     args = parser.parse_args()
 
     cutoff = cutoff_date()
@@ -132,9 +155,13 @@ def main():
     all_types = types_before(cutoff)
     summarizable = [t for t in all_types if is_summarizable(t)]
     skipped = [t for t in all_types if not is_summarizable(t)]
+    withheld = [] if args.all_types else [t for t in summarizable if t not in MERGED_TYPES]
+    if not args.all_types:
+        summarizable = [t for t in summarizable if t in MERGED_TYPES]
 
     print(f"{len(all_types)} types have data before cutoff")
-    print(f"  {len(summarizable)} summarizable (quantity)")
+    print(f"  {len(summarizable)} to process ({'all quantity types' if args.all_types else 'merged-hour types only, RECOMPUTE'})")
+    print(f"  {len(withheld)} withheld until --all-types (compact-mode residual): {', '.join(withheld) if withheld else 'none'}")
     print(f"  {len(skipped)} kept raw (category/workout): {', '.join(skipped) if skipped else 'none'}\n")
 
     total_raw = 0
@@ -143,22 +170,27 @@ def main():
         if not args.execute:
             n = count_raw(mt, cutoff)
             total_raw += n
-            print(f"  [dry-run] {mt}: {n:,} raw rows would be summarized")
+            verb = "recomputed into daily summaries (raw kept)" if mt in MERGED_TYPES else "compacted (raw deleted)"
+            print(f"  [dry-run] {mt}: {n:,} raw rows would be {verb}")
             continue
 
         result = summarize(mt, cutoff)
         if result:
-            raw = result[0].get("raw_count", 0)
-            days = result[0].get("summary_days", 0)
+            mode = result[0].get("mode", "?")
+            raw = result[0].get("raw_rows", 0)
+            days = result[0].get("summary_rows", 0)
+            skipped_days = result[0].get("skipped_days", 0)
             total_raw += raw
             total_days += days
-            print(f"  {mt}: {raw:,} rows -> {days} daily summaries (raw deleted)")
+            tail = "raw kept" if mode == "recompute" else "raw deleted"
+            extra = f", {skipped_days} days skipped (per-device rows still present)" if skipped_days else ""
+            print(f"  {mt}: {mode}: {raw:,} raw rows -> {days} daily summaries written ({tail}{extra})")
 
     print(f"\nTotal raw rows {'would be' if not args.execute else ''} processed: {total_raw:,}")
     if args.execute:
         print(f"Total daily summary rows written: {total_days:,}")
     else:
-        print("\nRe-run with --execute to apply (server-side transactional, no data-loss risk).")
+        print("\nRe-run with --execute to apply (server-side, one transaction per type).")
 
 
 if __name__ == "__main__":

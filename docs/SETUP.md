@@ -118,7 +118,8 @@ against a project you own. The service_role key ends up in your shell history â€
 
 ## Updating an existing project
 
-If your project was set up before 2026-09-13, do these in order:
+If your project was set up before 2026-09-13, do these in order. If you already ran the
+2026-09-13 upgrade, run only step 4.
 
 1. Pull the latest code in your health4ai clone: `git pull`. Redeploying from an old clone
    ships the old function again.
@@ -130,7 +131,11 @@ If your project was set up before 2026-09-13, do these in order:
    supabase functions deploy healthkit-ingest --project-ref <your-project-ref> --no-verify-jwt
    ```
 
-4. Force-quit and reopen the app. It asks your server what it supports once per launch.
+4. Run [`supabase/upgrades/2026-09-14_replace_merged_hours_per_hour.sql`](../supabase/upgrades/2026-09-14_replace_merged_hours_per_hour.sql)
+   in the SQL editor. Without it, a project with more than a few months of history never
+   finishes syncing activity types: the 2026-09-13 function full-scans the table and times out.
+
+5. Force-quit and reopen the app. It asks your server what it supports once per launch.
 
 Until you do, the app's Home screen says **Server update needed**. An iPhone and an Apple Watch
 both count the same steps. Apple Health shows one figure because it merges them, and the current

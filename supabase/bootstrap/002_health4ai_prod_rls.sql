@@ -173,6 +173,10 @@ REVOKE ALL ON FUNCTION public.health4ai_waitlist_normalize_email() FROM PUBLIC, 
 -- either double-counted or empty. A per-device row belongs to the hour its started_at falls
 -- in, so a sample crossing a boundary is replaced when the hour it started in arrives.
 -- Register D361.
+-- One DELETE per hour with constant bounds: a single DELETE .. USING jsonb_to_recordset
+-- cannot push the hour range into an index (bounds come from the recordset), planned as a
+-- full-table scan and hit PostgREST's 8 s statement timeout on any project with real
+-- history (measured 2026-09-13, 15 s for a two-hour payload). Still one transaction.
 CREATE OR REPLACE FUNCTION public.health4ai_replace_merged_hours(
   p_user_id uuid,
   p_rows    jsonb
@@ -183,8 +187,10 @@ SECURITY INVOKER
 SET search_path = pg_catalog, public
 AS $func$
 DECLARE
-  v_deleted bigint;
+  v_deleted bigint := 0;
   v_written bigint;
+  v_n       bigint;
+  r         record;
 BEGIN
   IF p_user_id IS NULL THEN
     RAISE EXCEPTION 'p_user_id is required';
@@ -193,26 +199,29 @@ BEGIN
     RAISE EXCEPTION 'p_rows must be a JSON array';
   END IF;
 
-  DELETE FROM public.healthkit_metrics m
-  USING jsonb_to_recordset(p_rows) AS r(metric_type text, started_at timestamptz)
-  WHERE m.user_id = p_user_id
-    AND m.metric_type = r.metric_type
-    AND m.started_at >= r.started_at
-    AND m.started_at <  r.started_at + interval '1 hour'
-    AND m.source_device <> 'HealthKit (all sources)';
-  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  FOR r IN
+    SELECT DISTINCT x.metric_type, x.started_at
+    FROM jsonb_to_recordset(p_rows) AS x(metric_type text, started_at timestamptz)
+  LOOP
+    DELETE FROM public.healthkit_metrics m
+    WHERE m.user_id = p_user_id
+      AND m.metric_type = r.metric_type
+      AND m.started_at >= r.started_at
+      AND m.started_at <  r.started_at + interval '1 hour'
+      AND m.source_device <> 'HealthKit (all sources)';
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_deleted := v_deleted + v_n;
+  END LOOP;
 
   INSERT INTO public.healthkit_metrics
     (user_id, metric_type, value, unit, source_device, started_at, ended_at, metadata)
-  SELECT p_user_id, r.metric_type, r.value, r.unit, 'HealthKit (all sources)',
-         r.started_at, r.ended_at, r.metadata
-  FROM jsonb_to_recordset(p_rows) AS r(metric_type text, value double precision, unit text,
+  SELECT p_user_id, x.metric_type, x.value, x.unit, 'HealthKit (all sources)',
+         x.started_at, x.ended_at, x.metadata
+  FROM jsonb_to_recordset(p_rows) AS x(metric_type text, value double precision, unit text,
                                        started_at timestamptz, ended_at timestamptz, metadata jsonb)
   ON CONFLICT (user_id, metric_type, source_device, started_at) DO UPDATE SET
     value = EXCLUDED.value, unit = EXCLUDED.unit,
     ended_at = EXCLUDED.ended_at, metadata = EXCLUDED.metadata;
-    -- The same columns the ingest function's PostgREST upsert sets; synced_at keeps its
-    -- insert-time default there too.
   GET DIAGNOSTICS v_written = ROW_COUNT;
 
   RETURN QUERY SELECT v_deleted, v_written;
