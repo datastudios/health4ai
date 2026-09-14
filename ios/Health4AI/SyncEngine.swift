@@ -1,16 +1,39 @@
 import Foundation
 import HealthKit
+import BackgroundTasks
 import UIKit
 
 // MARK: - SyncEngine
 
 /// Orchestrates all sync pathways:
-/// - BGTaskScheduler (hourly background task)
-/// - HKObserverQuery (push-triggered on new data for each type)
+/// - HKObserverQuery with HealthKit background delivery (wakes the app when a type gets new samples)
+/// - BGAppRefreshTask `com.health4ai.sync` (iOS-scheduled safety net, hourly at the earliest)
 /// - Workout completion observer (immediate sync on workout end)
 /// - Foreground launch sync (on every app open)
 ///
 /// Also handles batched HTTP POST with retry logic.
+
+/// Marks a BGTask completed exactly once.
+///
+/// The expiration handler and the work itself race to finish the task, and whichever loses
+/// would otherwise call `setTaskCompleted` a second time. Lock, not actor: the expiration
+/// handler arrives on an arbitrary queue and must complete synchronously.
+final class BGTaskCompletion: @unchecked Sendable {
+    private let task: BGTask
+    private let lock = NSLock()
+    private var done = false
+
+    init(_ task: BGTask) { self.task = task }
+
+    func finish(success: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !done else { return }
+        done = true
+        task.setTaskCompleted(success: success)
+    }
+}
+
 /// FIFO async mutex.
 ///
 /// A Swift `actor` is re-entrant across `await`: another call enters at every suspension
@@ -157,18 +180,94 @@ final class SyncEngine {
     @MainActor static var sharedAuthManager: AuthManager { shared.authManager }
     @MainActor static var sharedSyncState: SyncState { shared.syncState }
 
-    // MARK: - BGTaskScheduler Registration (disabled on iOS 27 Beta)
-    // BackgroundTasks.framework triggers _libxpc_initializer XPC crash on iOS 27 Beta.
-    //
-    // Background sync does NOT work while this is off, and the previous version of this
-    // comment claimed "HKObserverQuery background delivery still works" — it does not.
-    // `enableBackgroundDelivery` needs the com.apple.developer.healthkit.background-delivery
-    // entitlement, which is commented out in Health4AI.entitlements for the same reason, so
-    // the call below fails and observers only ever fire while the app is in the FOREGROUND.
-    // Measured 2026-09-11: not one row reached the database in 48 hours, and every sync in
-    // the app's history landed in a burst on a day the app was opened. Register D335.
-    // Restore all three (entitlement, UIBackgroundModes, BGTaskSchedulerPermittedIdentifiers)
-    // once the crash is retested against the iOS 27 GM.
+    // MARK: - BGTaskScheduler registration
+
+    /// Must match an entry in Info.plist `BGTaskSchedulerPermittedIdentifiers`.
+    static let backgroundSyncTaskIdentifier = "com.health4ai.sync"
+
+    /// Earliest-begin offset for the refresh task, targeting a roughly hourly cadence. iOS
+    /// treats it as a floor and runs the task when it chooses to.
+    static let backgroundSyncInterval: TimeInterval = 55 * 60
+
+    /// Call during app launch, before `didFinishLaunching` returns.
+    ///
+    /// Restored 2026-09-14. Removed 2026-06-18 with the entitlement and both Info.plist keys
+    /// as a workaround for an iOS 27 Beta 1 `_libxpc_initializer` crash, which left observers
+    /// firing only in the foreground: measured 2026-09-11, not one row reached the database in
+    /// 48 hours. Register D335.
+    func registerBackgroundTasks() {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.backgroundSyncTaskIdentifier,
+            using: nil
+        ) { [weak self] task in
+            guard let self = self, let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleBackgroundSyncTask(refreshTask)
+        }
+    }
+
+    /// Submits the next refresh request. Called after every full pass and whenever the app
+    /// leaves the foreground; resubmitting the same identifier replaces the pending request.
+    ///
+    /// `nextScheduledSync` is written here and nowhere else. It used to be declared and read
+    /// but never written, so the Home card said "Not scheduled" forever.
+    @MainActor
+    func scheduleBackgroundSync() {
+        let request = BGAppRefreshTaskRequest(identifier: Self.backgroundSyncTaskIdentifier)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: Self.backgroundSyncInterval)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            syncState.nextScheduledSync = request.earliestBeginDate
+        } catch let error as BGTaskScheduler.Error where error.code == .tooManyPendingTaskRequests {
+            // A request for this identifier is already pending; the earlier date still stands.
+            // Documented behaviour is that a resubmit replaces it, so this branch is not
+            // expected, but if it ever fires the card must not say "Not scheduled" while a
+            // request is queued.
+            print("[SyncEngine] Background sync already pending: \(error)")
+        } catch {
+            // Fails on the simulator and when the identifier is missing from Info.plist. nil is
+            // rendered as "Not scheduled", which is the true state; nothing is left claiming a
+            // sync that will not come.
+            syncState.nextScheduledSync = nil
+            print("[SyncEngine] Failed to schedule background sync: \(error)")
+        }
+    }
+
+    // MARK: - Background task handler
+
+    /// Runs the same anchored pass as the foreground path, under the task's expiration.
+    ///
+    /// The expiration handler is installed before the work starts, as BackgroundTasks
+    /// requires. On expiry the pass is cancelled: every page already posted has saved its
+    /// anchor, so the next pass resumes rather than repeats.
+    private func handleBackgroundSyncTask(_ task: BGAppRefreshTask) {
+        let completion = BGTaskCompletion(task)
+        var syncTask: Task<Void, Never>?
+        task.expirationHandler = {
+            syncTask?.cancel()
+            completion.finish(success: false)
+        }
+        syncTask = Task {
+            // Reschedule first, so a kill mid-pass still leaves a request pending.
+            await MainActor.run { self.scheduleBackgroundSync() }
+            let outcome = await self.runFullPass()
+            if outcome == .skipped {
+                // A pass is already running (a background launch starts one from
+                // didFinishLaunching moments before this handler fires). Hold the task
+                // assertion until it finishes so iOS does not suspend it half way.
+                await self.waitForInFlightPass()
+            }
+            completion.finish(success: outcome != .failed)
+        }
+    }
+
+    private func waitForInFlightPass() async {
+        while await MainActor.run(body: { Self.fullSyncInFlight }) {
+            guard (try? await Task.sleep(nanoseconds: 500_000_000)) != nil else { return }
+        }
+    }
 
     // MARK: - HKObserverQuery registration
 
@@ -178,10 +277,14 @@ final class SyncEngine {
         let types = HealthKitManager.sampleTypes()
 
         for sampleType in types {
-            // Enable background delivery (fires our app when new data is written)
-            hkManager.store.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { success, error in
-                if let error = error {
-                    print("[SyncEngine] Background delivery enable failed for \(sampleType.identifier): \(error)")
+            // Enable background delivery (fires our app when new data is written). A failure
+            // becomes published state: the Home card then says background sync is unavailable
+            // instead of the app quietly syncing only while open. Register D335.
+            hkManager.store.enableBackgroundDelivery(for: sampleType, frequency: .immediate) { [weak self] success, error in
+                guard let self = self else { return }
+                let enabled = success && error == nil
+                Task { @MainActor in
+                    self.syncState.recordBackgroundDelivery(for: sampleType.identifier, enabled: enabled)
                 }
             }
 
@@ -258,46 +361,75 @@ final class SyncEngine {
     /// Syncs all types using anchored queries (only new data since last sync).
     /// Call on every app foreground / launch.
     func performForegroundSync() {
-        Task {
-            // Test AND set in ONE MainActor hop. Reading the flag, awaiting, then writing
-            // it is check-then-act: both cold-launch callers (didFinishLaunching and
-            // applicationDidBecomeActive, which fire within moments of each other) could
-            // observe false before either wrote true, and both would proceed — exactly the
-            // duplicate pass this guard exists to stop.
-            let claimed = await MainActor.run { () -> Bool in
-                guard !Self.fullSyncInFlight else { return false }
-                Self.fullSyncInFlight = true
-                self.syncState.isSyncing = true
-                return true
-            }
-            guard claimed else { return }
+        Task { await runFullPass() }
+    }
 
-            do {
-                let outcome = try await performFullSync()
-                await MainActor.run {
-                    Self.fullSyncInFlight = false
-                    if outcome.failures.isEmpty {
-                        self.syncState.recordSyncComplete(count: outcome.count)
-                    } else if outcome.failures.count == outcome.attempted {
-                        // Every type failed. Reporting this as a completed sync of 0
-                        // records is how a total outage looks like a quiet day.
-                        let first = outcome.failures[0]
-                        self.syncState.recordSyncError(
-                            "Sync failed for all \(outcome.attempted) data types. "
-                            + "\(first.error.localizedDescription)")
-                    } else {
-                        self.syncState.recordSyncPartial(
-                            count: outcome.count,
-                            failed: outcome.failures.count,
-                            ofTypes: outcome.attempted)
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    Self.fullSyncInFlight = false
-                    self.syncState.recordSyncError(error.localizedDescription)
+    enum FullPassOutcome {
+        /// Another pass was already in flight; nothing was run.
+        case skipped
+        case succeeded
+        /// At least one type failed, or the pass was cancelled before finishing.
+        case failed
+    }
+
+    /// The one full anchored pass, shared by the foreground path and the BGAppRefreshTask
+    /// handler. Publishes its outcome to `syncState` and schedules the next background
+    /// refresh whatever the outcome, so a failed pass is retried rather than orphaned.
+    @discardableResult
+    func runFullPass() async -> FullPassOutcome {
+        // Test AND set in ONE MainActor hop. Reading the flag, awaiting, then writing
+        // it is check-then-act: both cold-launch callers (didFinishLaunching and
+        // applicationDidBecomeActive, which fire within moments of each other) could
+        // observe false before either wrote true, and both would proceed — exactly the
+        // duplicate pass this guard exists to stop.
+        let claimed = await MainActor.run { () -> Bool in
+            guard !Self.fullSyncInFlight else { return false }
+            Self.fullSyncInFlight = true
+            self.syncState.isSyncing = true
+            return true
+        }
+        guard claimed else { return .skipped }
+
+        do {
+            let outcome = try await performFullSync()
+            return await MainActor.run {
+                Self.fullSyncInFlight = false
+                defer { self.scheduleBackgroundSync() }
+                if outcome.failures.isEmpty {
+                    self.syncState.recordSyncComplete(count: outcome.count)
+                    return .succeeded
+                } else if outcome.failures.count == outcome.attempted {
+                    // Every type failed. Reporting this as a completed sync of 0
+                    // records is how a total outage looks like a quiet day.
+                    let first = outcome.failures[0]
+                    self.syncState.recordSyncError(
+                        "Sync failed for all \(outcome.attempted) data types. "
+                        + "\(first.error.localizedDescription)")
+                    return .failed
+                } else {
+                    self.syncState.recordSyncPartial(
+                        count: outcome.count,
+                        failed: outcome.failures.count,
+                        ofTypes: outcome.attempted)
+                    return .failed
                 }
             }
+        } catch is CancellationError {
+            // iOS reclaimed the background task's time. Not a sync error to show the user:
+            // every page already posted saved its anchor and the next pass resumes there.
+            await MainActor.run {
+                Self.fullSyncInFlight = false
+                self.syncState.recordSyncCancelled()
+                self.scheduleBackgroundSync()
+            }
+            return .failed
+        } catch {
+            await MainActor.run {
+                Self.fullSyncInFlight = false
+                self.syncState.recordSyncError(error.localizedDescription)
+                self.scheduleBackgroundSync()
+            }
+            return .failed
         }
     }
 
@@ -319,10 +451,13 @@ final class SyncEngine {
         // Per-type do/catch, matching BulkExportManager.runBackfill. This loop used to be a
         // bare `try await`, so ONE type throwing — a transient 5xx, a token expiring
         // mid-pass, a single bad HealthKit query — abandoned every type after it in
-        // iteration order. With background delivery disabled this pass is the only thing
-        // moving data, so an abandoned pass is not retried until the next app open.
+        // iteration order, and an abandoned pass is not retried until the next pass.
+        //
+        // Cancellation is the one thing that does stop the loop: it means iOS is reclaiming
+        // background time, and pressing on would only get the process suspended mid-post.
         var failures: [(type: String, error: Error)] = []
         for sampleType in types {
+            try Task.checkCancellation()
             do {
                 totalCount += try await syncType(sampleType)
             } catch {

@@ -8,15 +8,25 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>health4ai does not write health data.</string>
 
-	<!-- UIBackgroundModes omitted: 'fetch' triggers XPC service registration crash on iOS 27 Beta -->
-	<!-- Re-add when iOS 27 fixes the libxpc _xpc_init_service bug: -->
-	<!-- <key>UIBackgroundModes</key><array><string>fetch</string></array> -->
+	<!-- Background modes. 'fetch' backs the BGAppRefreshTask sync safety net, 'processing' the
+	     charger-only BGProcessingTask history backfill. Removed 2026-06 for an iOS 27 Beta 1
+	     XPC crash; restored 2026-09-14 on the public iOS 27 (D335). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 
-	<!-- BGTaskSchedulerPermittedIdentifiers omitted: triggers same XPC crash -->
-	<!-- Re-add com.health4ai.sync + com.health4ai.backfill when iOS 27 fixes XPC -->
+	<!-- BGTaskScheduler permitted identifiers. Must match SyncEngine.backgroundSyncTaskIdentifier
+	     and BulkExportManager.backfillTaskIdentifier exactly, or BGTaskScheduler.submit throws. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.health4ai.sync</string>
+		<string>com.health4ai.backfill</string>
+	</array>
 
-	<!-- iOS 27 Beta 1 requires UIApplicationSceneManifest even for apps built with older SDKs.
-	     Without it, iOS 27 uses a legacy XPC launch path that crashes in _xpc_init_service.
+	<!-- UIApplicationSceneManifest is required on iOS 27 even for apps built with older SDKs;
+	     without it iOS 27 uses a legacy XPC launch path that crashes in _xpc_init_service.
 	     SwiftUI App protocol handles scene delegation automatically; empty UISceneConfigurations is correct. -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>

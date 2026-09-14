@@ -1,5 +1,6 @@
 import Foundation
 import HealthKit
+import BackgroundTasks
 import UIKit
 
 // MARK: - BulkExportManager
@@ -13,6 +14,9 @@ final class BulkExportManager {
 
     private let hkManager = HealthKitManager.shared
     private let syncEngine: SyncEngine
+
+    /// Must match an entry in Info.plist `BGTaskSchedulerPermittedIdentifiers`.
+    static let backfillTaskIdentifier = "com.health4ai.backfill"
 
     // Tracks which types have been fully backfilled
     private static let completedTypesKey = "hkb.backfill.completedTypes"
@@ -353,9 +357,68 @@ final class BulkExportManager {
         return totalCount
     }
 
-    // MARK: - Background task support (disabled on iOS 27 Beta)
-    // BackgroundTasks.framework triggers _libxpc_initializer XPC crash on iOS 27 Beta.
-    // Restore registerBackgroundBackfillTask() + scheduleBackgroundBackfill() when fixed.
+    // MARK: - Background task support
+
+    /// Register the BGProcessingTask handler. Call at app launch before didFinishLaunching
+    /// returns. Restored 2026-09-14 with the rest of the BGTask infrastructure (D335).
+    func registerBackgroundBackfillTask() {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: Self.backfillTaskIdentifier,
+            using: nil
+        ) { [weak self] task in
+            guard let self = self, let processingTask = task as? BGProcessingTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleBackgroundBackfillTask(processingTask)
+        }
+    }
+
+    /// Schedule the next background backfill run. Call when entering background.
+    /// requiresExternalPower = true so iOS only runs it while the phone is charging.
+    func scheduleBackgroundBackfill() {
+        guard backfillNeeded else { return }
+        let request = BGProcessingTaskRequest(identifier: Self.backfillTaskIdentifier)
+        request.requiresNetworkConnectivity = true
+        request.requiresExternalPower = true
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
+        do {
+            try BGTaskScheduler.shared.submit(request)
+        } catch {
+            // Nothing on screen depends on this request: the import card already shows
+            // whether the history import is complete, and the next foreground launch
+            // resumes it from its checkpoints regardless.
+            print("[BulkExport] Failed to schedule background backfill: \(error)")
+        }
+    }
+
+    /// Resumes the checkpointed import under the task's expiration. Goes through
+    /// `startBackfill` so it shares the single-run guard with the foreground callers.
+    private func handleBackgroundBackfillTask(_ task: BGProcessingTask) {
+        let completion = BGTaskCompletion(task)
+        // Installed before any work starts, as BackgroundTasks requires. cancelBackfill
+        // leaves every per-type checkpoint in place, so the next run resumes, not restarts.
+        task.expirationHandler = { [weak self] in
+            Task { @MainActor in self?.cancelBackfill() }
+            completion.finish(success: false)
+        }
+        Task { @MainActor [weak self] in
+            guard let self = self else {
+                completion.finish(success: false)
+                return
+            }
+            self.scheduleBackgroundBackfill() // Reschedule immediately for the next opportunity
+            let syncState = SyncEngine.sharedSyncState
+            guard self.backfillNeeded, self.currentTask == nil else {
+                // Nothing left to import, or a run is already in flight. No work was owed.
+                completion.finish(success: true)
+                return
+            }
+            self.startBackfill(syncState: syncState)
+            await self.currentTask?.value
+            completion.finish(success: syncState.backfillError == nil)
+        }
+    }
 
     /// Request ~30 seconds of background execution time when the app transitions to background.
     /// This lets the current 90-day chunk finish rather than being cut off mid-upload.

@@ -75,7 +75,7 @@ struct PrivacyView: View {
                 icon: "arrow.triangle.2.circlepath",
                 color: .indigo,
                 title: "Sync status is visible",
-                detail: "health4ai syncs when it can. Background delivery depends on iOS permissions and system scheduling, so check the Home screen for the latest completed sync."
+                detail: "health4ai syncs every time you open the app, and in the background when iOS allows it. The Home screen shows the last completed sync, and says so if background sync is unavailable on this device."
             )
         }
         .padding()

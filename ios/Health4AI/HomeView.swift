@@ -157,7 +157,8 @@ struct HomeView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Next sync")
+                    // "Earliest": the date is the floor iOS was given, not a promise.
+                    Text("Next sync, earliest")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(syncState.formattedNextSync)
@@ -192,6 +193,9 @@ struct HomeView: View {
         // Same rank as missing metrics: the connection works, and the totals it delivers are
         // wrong. A green headline over double-counted steps is the state this exists to end.
         if connected && syncState.serverLacksMergedHours { return .orange }
+        // Below the two data warnings: the data is right, it just only moves while the app
+        // is open. Register D335.
+        if connected && !syncState.backgroundDeliveryFailedTypes.isEmpty { return .orange }
         switch syncState.connectionHealth {
         case .connected:    return .green
         case .stalled:      return .orange
@@ -214,10 +218,14 @@ struct HomeView: View {
             let isPartial = missingCount > 0 && syncState.connectionHealth == .connected
             let needsServerUpdate = !isPartial && syncState.serverLacksMergedHours
                 && syncState.connectionHealth == .connected
+            let backgroundUnavailable = !isPartial && !needsServerUpdate
+                && !syncState.backgroundDeliveryFailedTypes.isEmpty
+                && syncState.connectionHealth == .connected
             let title = isPartial ? "Partial data"
                 : needsServerUpdate ? "Server update needed"
+                : backgroundUnavailable ? "Background sync unavailable"
                 : syncState.connectionHealth.title
-            let symbol = (isPartial || needsServerUpdate)
+            let symbol = (isPartial || needsServerUpdate || backgroundUnavailable)
                 ? "exclamationmark.circle.fill" : syncState.connectionHealth.systemImage
             VStack(alignment: .leading, spacing: 2) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -240,8 +248,18 @@ struct HomeView: View {
                         Text("With an Apple Watch, steps, distance and energy are counted twice.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                    } else if backgroundUnavailable {
+                        // HealthKit refused background delivery, so observers fire only in the
+                        // foreground. Was a print() until 2026-09-14; the user could not see it.
+                        Text("Background sync is unavailable on this device; data syncs when you open the app.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     } else if syncState.connectionHealth == .stalled {
-                        Text("Signed in, but no health records in the last 48 hours")
+                        // A stalled connection with background delivery refused has its likely
+                        // cause in hand, so the caption names it instead of leaving a mystery.
+                        Text(syncState.backgroundDeliveryFailedTypes.isEmpty
+                             ? "Signed in, but no health records in the last 48 hours"
+                             : "No health records in the last 48 hours. Background sync is unavailable on this device; data syncs when you open the app.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -271,7 +289,9 @@ struct HomeView: View {
             // symbol in the same card repeats one fact twice. Healthy, stalled and disconnected
             // keep the status colour, where the antenna is the only symbol saying it.
             let isWarning = syncState.connectionHealth == .connected
-                && (!syncState.emptyExpectedMetricNames.isEmpty || syncState.serverLacksMergedHours)
+                && (!syncState.emptyExpectedMetricNames.isEmpty
+                    || syncState.serverLacksMergedHours
+                    || !syncState.backgroundDeliveryFailedTypes.isEmpty)
             Image(systemName: syncState.connectionHealth == .disconnected
                   ? "antenna.radiowaves.left.and.right.slash"
                   : "antenna.radiowaves.left.and.right")

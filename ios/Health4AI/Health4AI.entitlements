@@ -6,11 +6,13 @@
 	<key>com.apple.developer.healthkit</key>
 	<true/>
 
-	<!-- background-delivery omitted: triggers XPC _libxpc_initializer crash on iOS 27 Beta -->
-	<!-- Re-add when iOS 27 fixes the libxpc bug: -->
-	<!-- <key>com.apple.developer.healthkit.background-delivery</key><true/> -->
+	<!-- Allows HKObserverQuery delivery while the app is backgrounded. Removed 2026-06 for an
+	     iOS 27 Beta 1 _libxpc_initializer crash; restored 2026-09-14 on the public iOS 27 (D335). -->
+	<key>com.apple.developer.healthkit.background-delivery</key>
+	<true/>
 
-	<!-- health-records access omitted: requires Apple review, possible iOS 27 Beta XPC trigger -->
+	<!-- com.apple.developer.healthkit.access (health-records) deliberately omitted: it requires
+	     Apple review and the app reads no clinical records. Not part of the 2026-09-14 restore. -->
 
 	<!-- Keychain sharing (optional: enables sharing with extensions) -->
 	<!-- Remove this block if you don't need keychain sharing with an app extension -->

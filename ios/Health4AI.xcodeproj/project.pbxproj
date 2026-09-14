@@ -21,6 +21,7 @@
 		B0000012 /* ConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000012 /* ConnectionView.swift */; };
 		B0000013 /* PrivacyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000013 /* PrivacyView.swift */; };
 		B000000A /* HealthKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000A /* HealthKit.framework */; };
+		B000000B /* BackgroundTasks.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A000000B /* BackgroundTasks.framework */; };
 		B000000C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A000000F /* Assets.xcassets */; };
 		B000000D /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A0000014 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -40,6 +41,7 @@
 		A0000012 /* ConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionView.swift; sourceTree = "<group>"; };
 		A0000013 /* PrivacyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyView.swift; sourceTree = "<group>"; };
 		A000000A /* HealthKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = HealthKit.framework; path = System/Library/Frameworks/HealthKit.framework; sourceTree = SDKROOT; };
+		A000000B /* BackgroundTasks.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = BackgroundTasks.framework; path = System/Library/Frameworks/BackgroundTasks.framework; sourceTree = SDKROOT; };
 		A000000C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A000000D /* Health4AI.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Health4AI.entitlements; sourceTree = "<group>"; };
 		A000000E /* Health4AI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Health4AI.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -53,6 +55,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B000000A /* HealthKit.framework in Frameworks */,
+				B000000B /* BackgroundTasks.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				A000000A /* HealthKit.framework */,
+				A000000B /* BackgroundTasks.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";

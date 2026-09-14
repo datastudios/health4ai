@@ -21,7 +21,7 @@ and increased-contrast for free.
 | Secondary text | `.secondary` | captions, sublabels |
 | Brand accent | `.pink` | the ONE prominent action per screen |
 | Healthy | `.green` | connected, complete |
-| Attention | `.orange` | partial data, server update needed, stalled import |
+| Attention | `.orange` | partial data, server update needed, background sync unavailable, stalled import |
 | Failure | `.red` | sync error, destructive rows |
 | In progress | `.blue` | actively syncing |
 
@@ -49,8 +49,11 @@ and increased-contrast for free.
 `statusColor` in `HomeView.swift` is the one place that maps state to colour. The status
 card's icon and border read from it; its title and caption stay `.primary` and `.secondary`
 (rule 1 above). Precedence, highest first: syncing → error → **partial data** →
-**server update needed** → connection health. Partial data and server update needed are
-shown, and coloured, only while the connection is healthy.
+**server update needed** → **background sync unavailable** → connection health. Partial data,
+server update needed and background sync unavailable are shown, and coloured, only while the
+connection is healthy. Background sync unavailable means `enableBackgroundDelivery` failed for
+at least one type on this device; the app still syncs on every open, so it is attention, not
+failure.
 
 **Never add a second, independent colour path for the same state.** The bug this ordering
 exists to prevent: the headline said green "Active" while the card below it named four

@@ -3,14 +3,24 @@ import HealthKit
 
 // MARK: - AppDelegate
 
+/// UIApplicationDelegate responsible for:
+/// - BGTaskScheduler registration (must happen before didFinishLaunching returns)
+/// - Foreground sync on launch and app-foreground transitions
+/// - HealthKit observer startup after auth check
+/// - Scheduling the background sync and backfill tasks when the app leaves the foreground
 class AppDelegate: NSObject, UIApplicationDelegate {
 
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        // BGTaskScheduler registration removed: BackgroundTasks.framework triggers
-        // _libxpc_initializer XPC crash on iOS 27 Beta (24A5355q). Restore when fixed.
+        // Register BGTask handlers BEFORE the app finishes launching. The system silently
+        // ignores registrations made after launch completes, and a launch triggered by a
+        // pending task would then find no handler. UIKit guarantees the main thread here.
+        MainActor.assumeIsolated {
+            SyncEngine.shared.registerBackgroundTasks()
+            BulkExportManager.shared.registerBackgroundBackfillTask()
+        }
         Task { @MainActor in
             self.reconnectIfAuthenticated()
         }
@@ -28,7 +38,9 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
     func applicationDidEnterBackground(_ application: UIApplication) {
         Task { @MainActor in
+            SyncEngine.shared.scheduleBackgroundSync()
             BulkExportManager.shared.requestBackgroundTime()
+            BulkExportManager.shared.scheduleBackgroundBackfill()
         }
     }
 

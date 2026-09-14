@@ -73,9 +73,18 @@ final class SyncState: ObservableObject {
         didSet { UserDefaults.standard.set(lastSyncRecordCount, forKey: Keys.lastSyncRecordCount) }
     }
 
+    /// Earliest date iOS may run the next `com.health4ai.sync` refresh task. Written by
+    /// `SyncEngine.scheduleBackgroundSync`; nil when the last submit failed, which renders as
+    /// "Not scheduled" because that is the true state.
     @Published var nextScheduledSync: Date? = nil
     @Published var isSyncing: Bool = false
     @Published var syncError: String? = nil
+
+    /// HealthKit type identifiers whose `enableBackgroundDelivery` call failed. Non-empty means
+    /// observers for those types fire only while the app is in the foreground, so the Home card
+    /// says background sync is unavailable rather than letting the failure vanish into a log
+    /// line. Runtime state, refilled by every `SyncEngine.startObserving`. Register D335.
+    @Published var backgroundDeliveryFailedTypes: Set<String> = []
 
     // MARK: - Backfill status
 
@@ -231,6 +240,21 @@ final class SyncState: ObservableObject {
         syncError = message
     }
 
+    /// A pass that was cancelled by iOS reclaiming background time. Not an error: every page
+    /// already posted saved its anchor, and the next pass resumes from there.
+    func recordSyncCancelled() {
+        isSyncing = false
+    }
+
+    /// Outcome of one `enableBackgroundDelivery` call, so a failure is visible state.
+    func recordBackgroundDelivery(for identifier: String, enabled: Bool) {
+        if enabled {
+            backgroundDeliveryFailedTypes.remove(identifier)
+        } else {
+            backgroundDeliveryFailedTypes.insert(identifier)
+        }
+    }
+
     /// Some types synced, some did not.
     ///
     /// Needed because per-type error isolation created a path where every type could fail
@@ -306,6 +330,8 @@ final class SyncState: ObservableObject {
         isAuthenticated = false
         userEmail = nil
         serverLacksMergedHours = false
+        nextScheduledSync = nil
+        backgroundDeliveryFailedTypes = []
     }
 
     // MARK: - Computed helpers
@@ -316,8 +342,9 @@ final class SyncState: ObservableObject {
     }
 
     /// How recently health data must have landed for the connection to read as healthy.
-    /// Background delivery is scheduled by iOS, so a gap of a few hours is normal;
-    /// two days without a record means something is actually broken.
+    /// New samples arrive through HealthKit background delivery and the iOS-scheduled refresh
+    /// task, both run at iOS's discretion, so a gap of a few hours is normal; two days without
+    /// a record means something is actually broken.
     nonisolated static let freshDataWindow: TimeInterval = 48 * 60 * 60
 
     /// Pure decision function — `now` is injected so the 48-hour boundary is testable
@@ -366,8 +393,12 @@ final class SyncState: ObservableObject {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
+    /// The scheduled date is a floor, not an appointment: iOS runs the task some time at or
+    /// after it. Once that floor has passed the honest reading is that the task is pending,
+    /// not "55 minutes ago", which would claim a sync that has not happened.
     var formattedNextSync: String {
         guard let date = nextScheduledSync else { return "Not scheduled" }
+        if date <= Date() { return "Waiting for iOS" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
