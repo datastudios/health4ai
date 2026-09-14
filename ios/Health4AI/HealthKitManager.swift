@@ -754,10 +754,26 @@ extension HealthKitManager {
     /// only as a UUID with no dates, so nothing here knows which hour to re-post, and the
     /// stored total keeps the deleted amount until a new sample lands in that hour. That gap
     /// predates hourly totals (per-device rows were never deleted either). Register D361.
-    func hourlyTotals(for type: HKQuantityType, touchedBy samples: [HKSample]) async throws -> [HealthSample] {
+    ///
+    /// `notBefore` is the import horizon's sweep floor. The statistics query below starts
+    /// at the earliest touched hour, and a sample that straddles the floor (live sync's
+    /// predicate matches overlap, not strict start) would otherwise pull hours from before
+    /// it. Hours starting before the floor's own hour are dropped, so the collection query
+    /// never reaches earlier than the floor on either path. nil means unbounded.
+    func hourlyTotals(for type: HKQuantityType, touchedBy samples: [HKSample],
+                      notBefore floor: Date?) async throws -> [HealthSample] {
         let calendar = Self.utcCalendar
         var hours = Set<Date>()
         var unitString: String?
+        let floorHour: Date?
+        if let floor {
+            guard let start = calendar.dateInterval(of: .hour, for: floor)?.start else {
+                throw HourlyTotalsError.calendarArithmetic
+            }
+            floorHour = start
+        } else {
+            floorHour = nil
+        }
 
         for sample in samples {
             if unitString == nil, let quantitySample = sample as? HKQuantitySample {
@@ -769,7 +785,10 @@ extension HealthKitManager {
             // Every hour the sample overlaps. A sample ending exactly on a boundary does
             // not touch the next hour; a zero-length sample still touches its own.
             repeat {
-                hours.insert(hour)
+                // An hour before the horizon is not this path's to send.
+                if floorHour.map({ hour >= $0 }) ?? true {
+                    hours.insert(hour)
+                }
                 guard let next = calendar.date(byAdding: .hour, value: 1, to: hour) else {
                     throw HourlyTotalsError.calendarArithmetic
                 }

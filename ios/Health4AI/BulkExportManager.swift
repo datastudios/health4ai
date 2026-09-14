@@ -6,8 +6,9 @@ import UIKit
 // MARK: - BulkExportManager
 
 /// Manages the one-time historical backfill of all HealthKit data.
-/// On first launch after auth, queries ALL historical HKSamples (no date limit)
-/// and POSTs them in batches of 500, tracking progress in UserDefaults.
+/// On first launch after auth, queries historical HKSamples back to the sweep floor
+/// (`sweepFloor`: one year for a new install, 2013 when `ImportHorizon.everything` is
+/// chosen) and POSTs them in batches of 500, tracking progress in UserDefaults.
 final class BulkExportManager {
 
     @MainActor static let shared = BulkExportManager()
@@ -23,7 +24,14 @@ final class BulkExportManager {
     private static let backfillInProgressKey = "hkb.backfill.inProgress"
     // Per-type chunk checkpoint: saves the last completed chunkEnd so restarts resume mid-type
     private static let chunkCheckpointPrefix = "hkb.backfill.chunk."
-    // Types that finished a full 2013→now sweep having returned zero samples
+    // Per-type END of the window, set only when a type is armed to import the older history
+    // (2013 up to the floor a bounded sweep used). Absent means the window runs to now.
+    private static let chunkUntilPrefix = "hkb.backfill.until."
+    // The floor the bounded (`lastYear`) sweep actually used, fixed at the first bounded run
+    // so a resume days later and a later "import the rest" share one boundary. Absent while
+    // no bounded sweep has started, and removed once the older window has been armed.
+    private static let horizonFloorKey = "hkb.backfill.horizonFloor"
+    // Types that finished a full floor→now sweep having returned zero samples
     private static let emptyHighVolumeTypesKey = "hkb.backfill.emptyHighVolumeTypes"
 
     /// Types that any iPhone-carrying user necessarily has years of data for.
@@ -91,6 +99,88 @@ final class BulkExportManager {
         return !completed
     }
 
+    /// True if any sweep has ever made progress on this install: the global latch, a
+    /// finished type, or a mid-type checkpoint. `SyncState.init` reads this once, on the
+    /// first launch that knows about `ImportHorizon`, to keep an install that already
+    /// swept from 2013 on the 2013 floor. Static: it runs before the shared instance exists.
+    static func hasImportHistory() -> Bool {
+        let defaults = UserDefaults.standard
+        if defaults.bool(forKey: "hkb.backfillCompleted") { return true }
+        if !(defaults.stringArray(forKey: completedTypesKey) ?? []).isEmpty { return true }
+        return defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix(chunkCheckpointPrefix) }
+    }
+
+    // MARK: - Sweep floor
+
+    /// The earliest date any sweep starts at, shared by this backfill and by live sync's
+    /// anchored query predicate (`SyncEngine.queryAnchoredSamples`).
+    ///
+    /// `everything` is the 2013 floor and is never persisted. `lastYear` is fixed the first
+    /// time either path asks and reused after that: types run sequentially over days and a
+    /// per-call `now - 1 year` would give each type, and each path, its own floor, leaving
+    /// the later "import everything" pass no single boundary to fill up to. Static so the
+    /// sync engine can read it off the main actor; UserDefaults is thread-safe.
+    static func sweepFloor(for horizon: ImportHorizon, now: Date = Date()) -> Date {
+        switch horizon {
+        case .everything:
+            return ImportHorizon.historyFloor
+        case .lastYear:
+            // The read-check-write is locked: the launch sync and a just-armed backfill can
+            // ask within the same second, and two floors a second apart would break the
+            // "one boundary" promise the older-history pass relies on.
+            Self.horizonFloorLock.lock()
+            defer { Self.horizonFloorLock.unlock() }
+            let defaults = UserDefaults.standard
+            let stored = defaults.double(forKey: Self.horizonFloorKey)
+            if stored > 0 { return Date(timeIntervalSince1970: stored) }
+            let floor = horizon.floor(now: now)
+            defaults.set(floor.timeIntervalSince1970, forKey: Self.horizonFloorKey)
+            return floor
+        }
+    }
+
+    private static let horizonFloorLock = NSLock()
+
+    /// Arms every type to import the history a bounded sweep left out: 2013 up to the floor
+    /// that sweep used, and nothing later. Called by the setting's `lastYear → everything`
+    /// change, after `cancelAndWait()`.
+    ///
+    /// A finished type gets that one window, bounded by `chunkUntilPrefix`, so the year it
+    /// already sent is not sent again. A type caught mid-sweep, with a checkpoint inside
+    /// the last year, is reset to 2013→now instead: its two windows are not contiguous, and
+    /// re-posting the part of the year it had reached is idempotent (the endpoint upserts)
+    /// while adding a second window shape to the checkpoint machinery is not. A type that
+    /// never started needs nothing; the new horizon already gives it the 2013 floor.
+    ///
+    /// No bounded sweep ever having run means there is no older window to fill, and
+    /// nothing is changed. The stored floor is removed once used, so a later switch back
+    /// and forth does not re-arm a window that has already been imported.
+    @MainActor
+    func importOlderHistory(syncState: SyncState) {
+        let defaults = UserDefaults.standard
+        let stored = defaults.double(forKey: Self.horizonFloorKey)
+        guard stored > 0 else { return }
+        let previousFloor = Date(timeIntervalSince1970: stored)
+        var completed = completedTypes
+        for sampleType in HealthKitManager.sampleTypes() {
+            let identifier = sampleType.identifier
+            let checkpointKey = Self.chunkCheckpointPrefix + identifier
+            if completed.contains(identifier) {
+                completed.remove(identifier)
+                defaults.removeObject(forKey: checkpointKey)
+                defaults.set(previousFloor.timeIntervalSince1970, forKey: Self.chunkUntilPrefix + identifier)
+            } else if defaults.double(forKey: checkpointKey) > 0 {
+                defaults.removeObject(forKey: checkpointKey)
+                defaults.removeObject(forKey: Self.chunkUntilPrefix + identifier)
+            }
+        }
+        completedTypes = completed
+        defaults.removeObject(forKey: Self.horizonFloorKey)
+        // Un-latch so backfillNeeded fires and startBackfill actually runs again.
+        syncState.backfillCompleted = false
+        print("[BulkExport] Armed older history up to \(previousFloor) for every type.")
+    }
+
     // MARK: - Start backfill
 
     /// Begins (or resumes) the full historical backfill.
@@ -149,15 +239,27 @@ final class BulkExportManager {
         let totalTypes = remainingTypes.count
         var typesCompleted = 0
 
-        let serverURL = await MainActor.run { syncState.resolvedEndpointURL }
+        let (serverURL, horizon) = await MainActor.run {
+            (syncState.resolvedEndpointURL, syncState.importHorizon)
+        }
+        // One floor for the whole run. Read once, so a setting change mid-run cannot give
+        // two types two floors; the change path cancels this run and starts a new one.
+        let floor = Self.sweepFloor(for: horizon)
 
         for sampleType in remainingTypes {
             if Task.isCancelled { break }
+
+            // A window bounded at the previous floor is the older history only. Zero
+            // samples there says nothing about a permission: a Watch bought last spring has
+            // no heart rate in 2019. Only a window that reaches now can prove a denial.
+            let sweepsToNow = UserDefaults.standard
+                .double(forKey: Self.chunkUntilPrefix + sampleType.identifier) <= 0
 
             do {
                 let count = try await backfillType(
                     sampleType: sampleType,
                     serverURL: serverURL,
+                    floor: floor,
                     onBatch: { batchPosted, batchStored, earliestDate, latestDate in
                         totalPosted += batchPosted
                         if let s = batchStored {
@@ -189,8 +291,10 @@ final class BulkExportManager {
 
                 // A full sweep of a type that cannot legitimately be empty, returning
                 // nothing, is the app's only observable symptom of a denied read
-                // permission. Record it rather than latching a silent "complete".
-                if Self.alwaysExpectedIdentifiers.contains(sampleType.identifier) {
+                // permission. Record it rather than latching a silent "complete". A year
+                // of steps is as impossible to have none of as thirteen years, so the
+                // bounded horizon keeps this working; the older-window pass is skipped.
+                if sweepsToNow && Self.alwaysExpectedIdentifiers.contains(sampleType.identifier) {
                     var empties = emptyHighVolumeTypes
                     if count == 0 {
                         empties.insert(sampleType.identifier)
@@ -249,9 +353,14 @@ final class BulkExportManager {
     /// Queries historical samples for a type in 90-day chunks to keep memory bounded.
     /// Loading all records at once (400K+ for steps/HR) causes iOS OOM kills.
     /// Each chunk is queried, converted, posted, and released before the next chunk loads.
+    ///
+    /// The window is `[floor, until)`: `floor` is the run's sweep floor, `until` is now
+    /// unless the type is armed for the older history, in which case it is the floor the
+    /// earlier bounded sweep used (see `importOlderHistory`).
     private func backfillType(
         sampleType: HKSampleType,
         serverURL: String,
+        floor: Date,
         onBatch: @escaping (_ posted: Int, _ stored: Int?, _ earliest: Date?, _ latest: Date?) -> Void
     ) async throws -> Int {
         let token: String
@@ -262,17 +371,22 @@ final class BulkExportManager {
         }
 
         let calendar = Calendar.current
-        let floor = DateComponents(calendar: calendar, year: 2013, month: 1, day: 1).date!
         let now = Date()
         let chunkDays = 90
         var totalCount = 0
 
-        // Resume from last saved checkpoint if the app was killed mid-type
+        let untilKey = Self.chunkUntilPrefix + sampleType.identifier
+        let untilTS = UserDefaults.standard.double(forKey: untilKey)
+        let until = untilTS > 0 ? min(Date(timeIntervalSince1970: untilTS), now) : now
+
+        // Resume from last saved checkpoint if the app was killed mid-type. Never below the
+        // floor: a checkpoint left by a 2013 sweep before the horizon was narrowed to a
+        // year would otherwise carry on importing the history the user just declined.
         let checkpointKey = Self.chunkCheckpointPrefix + sampleType.identifier
         let checkpointTS = UserDefaults.standard.double(forKey: checkpointKey)
-        var chunkStart = checkpointTS > 0 ? Date(timeIntervalSince1970: checkpointTS) : floor
+        var chunkStart = checkpointTS > 0 ? max(Date(timeIntervalSince1970: checkpointTS), floor) : floor
 
-        while chunkStart < now {
+        while chunkStart < until {
             // THROW, never break. Breaking falls through to the checkpoint-clear and
             // returns normally, and runBackfill reads a normal return as "this type
             // finished" — so a cancelled type was marked fully imported AND lost its
@@ -280,7 +394,7 @@ final class BulkExportManager {
             // runBackfill already handles by leaving the type un-completed.
             try Task.checkCancellation()
 
-            let chunkEnd = min(calendar.date(byAdding: .day, value: chunkDays, to: chunkStart)!, now)
+            let chunkEnd = min(calendar.date(byAdding: .day, value: chunkDays, to: chunkStart)!, until)
 
             let samples: [HKSample]
             do {
@@ -308,7 +422,8 @@ final class BulkExportManager {
                 }
                 let healthSamples: [HealthSample]
                 if usesMergedHours, let quantityType = sampleType as? HKQuantityType {
-                    healthSamples = try await hkManager.hourlyTotals(for: quantityType, touchedBy: samples)
+                    healthSamples = try await hkManager.hourlyTotals(
+                        for: quantityType, touchedBy: samples, notBefore: floor)
                 } else {
                     healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
                 }
@@ -347,13 +462,14 @@ final class BulkExportManager {
             }
 
             chunkStart = chunkEnd
-            // Save checkpoint after each chunk so kills resume here, not from 2013.
+            // Save checkpoint after each chunk so kills resume here, not from the floor.
             // Reached only when every batch in the chunk posted — see the early return.
             UserDefaults.standard.set(chunkEnd.timeIntervalSince1970, forKey: checkpointKey)
         }
 
-        // Clear checkpoint once type is fully complete
+        // Clear checkpoint and window end once type is fully complete
         UserDefaults.standard.removeObject(forKey: checkpointKey)
+        UserDefaults.standard.removeObject(forKey: untilKey)
         return totalCount
     }
 
@@ -544,6 +660,9 @@ final class BulkExportManager {
         let defaults = UserDefaults.standard
         for identifier in identifiers {
             defaults.removeObject(forKey: Self.chunkCheckpointPrefix + identifier)
+            // A retry sweeps the type's whole current window, floor to now; an older-history
+            // bound left behind would stop it a year short.
+            defaults.removeObject(forKey: Self.chunkUntilPrefix + identifier)
         }
         var empties = emptyHighVolumeTypes
         empties.subtract(identifiers)
@@ -559,11 +678,13 @@ final class BulkExportManager {
         UserDefaults.standard.removeObject(forKey: "hkb.backfillCompleted")
         UserDefaults.standard.removeObject(forKey: "hkb.backfillProgress")
         UserDefaults.standard.removeObject(forKey: Self.backfillInProgressKey)
-        // Clear all per-type chunk checkpoints
+        // Clear all per-type chunk checkpoints and window ends, and the persisted floor so
+        // the fresh run computes one for whatever the horizon is now.
         let defaults = UserDefaults.standard
         defaults.dictionaryRepresentation().keys
-            .filter { $0.hasPrefix(Self.chunkCheckpointPrefix) }
+            .filter { $0.hasPrefix(Self.chunkCheckpointPrefix) || $0.hasPrefix(Self.chunkUntilPrefix) }
             .forEach { defaults.removeObject(forKey: $0) }
+        defaults.removeObject(forKey: Self.horizonFloorKey)
         cancelBackfill()
     }
 }

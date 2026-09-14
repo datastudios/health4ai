@@ -29,6 +29,47 @@ enum RestAuthType: String, CaseIterable {
     }
 }
 
+// MARK: - Import horizon
+
+/// How far back the history import sweeps.
+///
+/// Measured on the maintainer's own project, the raw table costs about 2.9 KB per row with
+/// its indexes, so a free Supabase project (500 MB) holds roughly 170k rows. One Apple Watch
+/// owner's sleep history alone is 131k rows and their heart-rate history 890k, so the old
+/// unconditional 2013 sweep hit the free tier's read-only wall mid-import and showed a
+/// retrying error with no explanation. New installs import one year; the rest is opt-in.
+enum ImportHorizon: String, CaseIterable, Identifiable {
+    case lastYear   = "lastYear"
+    case everything = "everything"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .lastYear:   return "Last year"
+        case .everything: return "Everything"
+        }
+    }
+
+    /// The earliest date any sweep ever reads. HealthKit predates it on no device.
+    static let historyFloor: Date =
+        DateComponents(calendar: Calendar.current, year: 2013, month: 1, day: 1).date!
+
+    /// The sweep floor this horizon implies at `now`, before persistence: `everything` is
+    /// the 2013 floor; `lastYear` is one calendar year back, never earlier than 2013.
+    /// `BulkExportManager.sweepFloor` persists the `lastYear` answer so a resumed sweep and
+    /// a later "import the rest" agree on one boundary.
+    func floor(now: Date) -> Date {
+        switch self {
+        case .everything:
+            return Self.historyFloor
+        case .lastYear:
+            let yearAgo = Calendar.current.date(byAdding: .year, value: -1, to: now)!
+            return max(Self.historyFloor, yearAgo)
+        }
+    }
+}
+
 // MARK: - Connection health
 
 /// Combined state of "signed in to your backend" and "health records are actually arriving".
@@ -106,7 +147,7 @@ final class SyncState: ObservableObject {
     /// failure instead of success.
     @Published var backfillStoredRecords: Int? = nil
     /// Where the sweep is right now. NOT monotonic: types run sequentially and each
-    /// restarts at the 2013 floor, so a running max would pin to the present after the
+    /// restarts at the sweep floor, so a running max would pin to the present after the
     /// first type finishes and stay there for the remaining ~119.
     @Published var backfillCurrentDate: Date? = nil
     /// When the last batch completed. A backfill that stops posting shows a live
@@ -151,6 +192,15 @@ final class SyncState: ObservableObject {
 
     @Published var restApiKeyHeader: String {
         didSet { UserDefaults.standard.set(restApiKeyHeader, forKey: Keys.restApiKeyHeader) }
+    }
+
+    /// How far back the history import reaches. Read by `BulkExportManager.runBackfill` at
+    /// the start of every run and by `SyncEngine.syncType` on every pass: both bound their
+    /// queries at the one persisted floor `BulkExportManager.sweepFloor` returns, since a
+    /// first live pass with no anchor otherwise pages a type's whole history. Changing it is
+    /// acted on by `ConnectionView`, which arms the older window through `BulkExportManager`.
+    @Published var importHorizon: ImportHorizon {
+        didSet { UserDefaults.standard.set(importHorizon.rawValue, forKey: Keys.importHorizon) }
     }
 
     // MARK: - Auth
@@ -210,6 +260,21 @@ final class SyncState: ObservableObject {
         self.backfillCompleted = defaults.bool(forKey: Keys.backfillCompleted)
         self.lifetimeSyncedRecords = defaults.integer(forKey: Keys.lifetimeSyncedRecords)
         self.backfillSyncedRecords = defaults.integer(forKey: Keys.backfillProgress)
+
+        if let raw = defaults.string(forKey: Keys.importHorizon),
+           let stored = ImportHorizon(rawValue: raw) {
+            self.importHorizon = stored
+        } else {
+            // First launch with this setting. An install that has already swept from 2013,
+            // finished or not, keeps sweeping from 2013: it holds that data and its per-type
+            // progress, and neither is touched. Only an install with no import history at
+            // all gets the bounded default. Decided once and written through, because
+            // didSet does not fire during init and the answer must not change with the
+            // import state on later launches.
+            let migrated: ImportHorizon = BulkExportManager.hasImportHistory() ? .everything : .lastYear
+            self.importHorizon = migrated
+            defaults.set(migrated.rawValue, forKey: Keys.importHorizon)
+        }
 
         #if DEBUG
         // Screenshot state for the design gate: signed in, data flowing, server without merged
@@ -316,6 +381,7 @@ final class SyncState: ObservableObject {
         serverURL = ""
         restAuthType = .bearer
         restApiKeyHeader = "X-API-Key"
+        importHorizon = .lastYear
         lastSyncDate = nil
         lastSyncRecordCount = 0
         backfillCompleted = false
@@ -332,6 +398,7 @@ final class SyncState: ObservableObject {
         serverLacksMergedHours = false
         nextScheduledSync = nil
         backgroundDeliveryFailedTypes = []
+        emptyExpectedMetricNames = []
     }
 
     // MARK: - Computed helpers
@@ -413,6 +480,7 @@ private enum Keys {
     static let serverURL            = "hkb.serverURL"
     static let restAuthType         = "hkb.restAuthType"
     static let restApiKeyHeader     = "hkb.restApiKeyHeader"
+    static let importHorizon        = "hkb.importHorizon"
     static let lastSyncDate         = "hkb.lastSyncDate"
     static let lastSyncRecordCount  = "hkb.lastSyncRecordCount"
     static let backfillCompleted    = "hkb.backfillCompleted"

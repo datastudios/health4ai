@@ -556,7 +556,11 @@ struct HomeView: View {
                     emptyMetricsWarning
                 }
             } else {
-                Text("Import all historical health records from HealthKit.")
+                // Says what the import setting will actually do; "all historical records"
+                // under the one-year default would be a claim the sweep does not honour.
+                Text(syncState.importHorizon == .everything
+                     ? "Import all historical health records from HealthKit."
+                     : "Import the last year of health records from HealthKit.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Run Import") {
@@ -659,7 +663,7 @@ struct HomeView: View {
                 // costs, so they are no longer the same button. An unfinished import
                 // resumes from its per-type checkpoints; only a FINISHED one offers to
                 // start over, and that asks first, because it discards every checkpoint
-                // and re-sends the entire history from 2013.
+                // and re-sends the whole history the import setting covers.
                 if syncState.backfillCompleted {
                     confirmStartOver = true
                 } else {
@@ -690,13 +694,18 @@ struct HomeView: View {
         }
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .confirmationDialog("Import everything again?",
+        .confirmationDialog("Import again from scratch?",
                             isPresented: $confirmStartOver, titleVisibility: .visible) {
             Button("Import Again from Scratch", role: .destructive) { rerunImport() }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("This discards where the last import got to and re-sends your full "
-                 + "history from 2013. It can take hours.")
+            // The cost stated is the one the horizon sets. Under the one-year default the
+            // re-send stops a year back, and "from 2013" would overstate it.
+            Text(syncState.importHorizon == .everything
+                 ? "This discards where the last import got to and re-sends your full "
+                   + "history from 2013. It can take hours."
+                 : "This discards where the last import got to and re-sends the last "
+                   + "year of your history. It can take a while.")
         }
     }
 }

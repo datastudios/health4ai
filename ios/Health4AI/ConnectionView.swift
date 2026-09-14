@@ -11,16 +11,43 @@ struct ConnectionView: View {
     @State private var showErase = false
     @State private var testResult: TestResult? = nil
     @State private var isTesting = false
+    /// The in-flight Last year → Everything switch, so a second flip cancels the first
+    /// instead of running two cancel/re-arm sequences over each other.
+    @State private var horizonSwitchTask: Task<Void, Never>? = nil
     var body: some View {
         NavigationStack {
             List {
                 configSection
                 authSection
+                historySection
                 privacySection
                 testSection
             }
             .navigationTitle("Connection")
             .navigationBarTitleDisplayMode(.large)
+        }
+        .onChange(of: syncState.importHorizon) { oldValue, newValue in
+            guard oldValue == .lastYear, newValue == .everything else {
+                // Everything → Last year changes nothing already sent, and the run in
+                // flight keeps the floor it started with. The next sweep uses the new one.
+                return
+            }
+            horizonSwitchTask?.cancel()
+            horizonSwitchTask = Task {
+                // Await the actual stop before re-arming: a cancel REQUEST alone lets a
+                // second runBackfill start while the first is still writing completedTypes.
+                await BulkExportManager.shared.cancelAndWait()
+                guard !Task.isCancelled else { return }
+                syncState.isBackfilling = false
+                BulkExportManager.shared.importOlderHistory(syncState: syncState)
+                // Signed out, the arming waits: the next sign-in starts the import, as it
+                // does for any unfinished one. Live sync needs no action: its next pass
+                // reads the new horizon, drops its floor predicate and keeps its anchor,
+                // so it delivers only what is new while the bulk path sends 2013 → floor.
+                if syncState.isAuthenticated {
+                    BulkExportManager.shared.startBackfill(syncState: syncState)
+                }
+            }
         }
         .sheet(isPresented: $showSignIn) {
             SignInView()
@@ -154,7 +181,44 @@ struct ConnectionView: View {
                 }
             } header: {
                 Text("Authentication")
+            } footer: {
+                // Signing in is what starts the first import, so this is the last place to
+                // say how far back it reaches. Shown only while that is still true: before
+                // sign-in, before any sweep, and only under the bounded default. It names
+                // the section two rows down rather than a "Settings" screen this app does
+                // not have.
+                if !syncState.isAuthenticated
+                    && syncState.importHorizon == .lastYear
+                    && !syncState.backfillCompleted
+                    && syncState.backfillSyncedRecords == 0 {
+                    Text("Imports the last year of Health data. You can import everything later under Health History below.")
+                }
             }
+        }
+    }
+
+    // MARK: - Import horizon
+
+    private var historySection: some View {
+        Section {
+            // LabeledContent stacks label over value at accessibility sizes on its own;
+            // the Home scope picker uses the same shape. Menu style, not segmented:
+            // "Everything" in a segment truncates at accessibilityXXXL on 375pt.
+            LabeledContent("History to import") {
+                Picker("History to import", selection: $syncState.importHorizon) {
+                    ForEach(ImportHorizon.allCases) { horizon in
+                        Text(horizon.title).tag(horizon)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+        } header: {
+            Text("Health History")
+        } footer: {
+            Text("A free Supabase project fills up after about a year of Apple Watch data. "
+                 + "Switching to Everything imports your older history now, which can take hours. "
+                 + "Switching back to Last year leaves what is already imported in place.")
         }
     }
 

@@ -497,7 +497,13 @@ final class SyncEngine {
     /// The body of `syncType`. Only ever called while `syncMutex` is held, which is what
     /// makes the `syncAnchors` reads and writes below safe.
     private func syncTypeLocked(_ sampleType: HKSampleType) async throws -> Int {
-        let serverURL = await MainActor.run { syncState.resolvedEndpointURL }
+        let (serverURL, horizon) = await MainActor.run {
+            (syncState.resolvedEndpointURL, syncState.importHorizon)
+        }
+        // The SAME persisted floor the backfill sweeps from (hkb.backfill.horizonFloor),
+        // persisted here first if live sync happens to run before the backfill does, so the
+        // two paths share one boundary. nil under `everything`: no predicate, as before.
+        let floor: Date? = horizon == .lastYear ? BulkExportManager.sweepFloor(for: horizon) : nil
         let token: String
         do {
             token = try await authManager.validToken(serverURL: serverURL)
@@ -512,7 +518,7 @@ final class SyncEngine {
         while true {
             let anchor = syncAnchors[sampleType.identifier]
             let (samples, newAnchor) = try await queryAnchoredSamples(
-                type: sampleType, anchor: anchor)
+                type: sampleType, anchor: anchor, floor: floor)
 
             if samples.isEmpty {
                 // Save the anchor even on an empty page: it is how HealthKit says
@@ -531,7 +537,8 @@ final class SyncEngine {
             }
             let healthSamples: [HealthSample]
             if usesMergedHours, let quantityType = sampleType as? HKQuantityType {
-                healthSamples = try await hkManager.hourlyTotals(for: quantityType, touchedBy: samples)
+                healthSamples = try await hkManager.hourlyTotals(
+                    for: quantityType, touchedBy: samples, notBefore: floor)
             } else {
                 healthSamples = samples.compactMap { hkManager.convert(sample: $0) }
             }
@@ -578,14 +585,35 @@ final class SyncEngine {
     /// and a kill resumes instead of restarting.
     static let anchorPageSize = 5_000
 
+    /// `floor` bounds the page to samples overlapping `[floor, ∞)`; nil means unbounded.
+    ///
+    /// Paging alone did not make a fresh install safe: with no anchor and no predicate the
+    /// first pass still walks a type's entire history, 5,000 at a time, so the one-year
+    /// import horizon protected nothing on the path that runs at every sign-in. Under
+    /// `lastYear` the predicate starts at the same persisted floor the backfill uses.
+    ///
+    /// Switching to `everything` later drops the predicate but KEEPS the saved anchor, so
+    /// live sync does not re-page history; the bulk path delivers 2013 → floor. The anchor
+    /// stays valid across the predicate change: an HKQueryAnchor is a position in
+    /// HealthKit's change log (Apple: "the anchor value returned by a previous query ...
+    /// the query returns only the objects that were added or deleted after that anchor",
+    /// and the predicate is documented separately as limiting which of those results are
+    /// returned). Nothing in the HKAnchoredObjectQuery or HKQueryAnchor documentation ties
+    /// an anchor to the predicate it was produced under. Consequence, under `lastYear`: a
+    /// sample backdated before the floor and added later is filtered out here and never
+    /// imported, which is what the setting says.
     private func queryAnchoredSamples(
         type sampleType: HKSampleType,
-        anchor: HKQueryAnchor?
+        anchor: HKQueryAnchor?,
+        floor: Date?
     ) async throws -> ([HKSample], HKQueryAnchor?) {
-        try await withCheckedThrowingContinuation { continuation in
+        let predicate = floor.map {
+            HKQuery.predicateForSamples(withStart: $0, end: nil, options: [])
+        }
+        return try await withCheckedThrowingContinuation { continuation in
             let query = HKAnchoredObjectQuery(
                 type: sampleType,
-                predicate: nil,
+                predicate: predicate,
                 anchor: anchor,
                 limit: Self.anchorPageSize
             ) { _, added, _, newAnchor, error in
