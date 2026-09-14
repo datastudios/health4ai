@@ -139,13 +139,13 @@ The model runs on your hardware and the MCP server runs locally; your health dat
 | Tool | What it answers |
 |------|----------------|
 | `get_health_summary` | Overview of key metrics for the past N days |
-| `get_sleep` | Per-night sleep breakdown with REM, Deep, Core stages |
+| `get_sleep` | Per-night sleep breakdown with REM, Deep, Core stages. One source per night: Oura > Apple Watch > Whoop > Garmin > Withings > whichever other source (iPhone included) has the most stage records |
 | `get_hrv_trend` | Daily HRV (SDNN) with rolling comparison and trend |
 | `get_daily_snapshot` | Everything recorded for a specific date |
 | `get_workouts` | Recent workouts with type, duration, distance, calories |
 | `query_metric` | Raw time-series for any HealthKit metric type |
 | `get_long_term_trend` | Monthly aggregates over years (raw + summary tiers) |
-| `get_coaching_brief` | Recovery status, sleep quality, training load, fitness markers |
+| `get_coaching_brief` | Recovery status, sleep quality (same one-source-per-night rule as `get_sleep`), training load, fitness markers |
 | `search_records` | Find days where a metric crossed a threshold |
 | `get_metric_stats` | Personal baseline: min/max/mean/percentiles |
 | `compare_periods` | Compare a metric between two date ranges |
@@ -198,7 +198,7 @@ other metric synced normally, and the app displayed a green "Complete" throughou
               Claude · ChatGPT · Cursor · Ollama · any client
 ```
 
-**Data tiers:** queries within the last 30 days return raw samples; older data transparently switches to pre-aggregated daily summaries — so long-term trend queries stay fast regardless of data volume.
+**Data tiers:** queries within the last 30 days return raw samples. Older days use a pre-aggregated row from `healthkit_daily_summaries` where one exists and are otherwise aggregated per day inside Postgres from the raw samples, so results are complete whether or not the summariser has ever run on your project (on a fresh self-hosted project it never has). Responses carry a `tier` block saying how many days each tier served. Calendar days follow `HEALTH4AI_TZ` (default UTC; set it in `mcp-server/.env`).
 
 ---
 

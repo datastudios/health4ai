@@ -1,7 +1,9 @@
 """
 MCP tool implementations — reads from Postgres via psycopg2.
-Routing: queries within 30 days use raw healthkit_metrics;
-queries beyond 30 days use healthkit_daily_summaries (aggregated).
+Routing: queries within 30 days use raw healthkit_metrics; days beyond 30 use a
+healthkit_daily_summaries row where one exists and are aggregated from raw in SQL
+otherwise (self-hosted projects never run compaction, so their summary tier is empty).
+Calendar days follow HEALTH4AI_TZ (default UTC).
 
 Connection: set DATABASE_URL (or its alias SUPABASE_DB_URL) to a Postgres connection
 string. Nothing is auto-constructed from SUPABASE_URL or a service-role key — that key is not
@@ -10,17 +12,33 @@ _build_database_url() below refuses to build one, and says why.
 """
 
 from datetime import datetime, date, timedelta, timezone
-from zoneinfo import ZoneInfo
-
-NY = ZoneInfo("America/New_York")
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import contextvars
 import os
 import re
+import uuid
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+def _load_timezone(name: str) -> ZoneInfo:
+    """Resolve HEALTH4AI_TZ. Every calendar-day bucket in this module (daily aggregates,
+    snapshots, sleep nights) follows this zone; it used to be hard-coded to the author's
+    (America/New_York), which put every other user's midnight in the wrong place."""
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError) as e:
+        raise RuntimeError(
+            f"HEALTH4AI_TZ={name!r} is not a valid IANA time zone name "
+            "(examples: UTC, America/New_York, Europe/Berlin). Unset it to use UTC."
+        ) from e
+
+
+TZ_NAME = os.environ.get("HEALTH4AI_TZ", "UTC")
+TZ = _load_timezone(TZ_NAME)
 
 
 
@@ -42,6 +60,27 @@ def _build_database_url() -> str:
 
 DATABASE_URL = _build_database_url()
 DEFAULT_USER_ID = os.environ.get("HEALTHKIT_USER_ID", "")
+
+PLACEHOLDER_USER_ID = "00000000-0000-0000-0000-000000000000"  # the value shipped in .env.example
+
+
+def validate_user_id(raw: str | None) -> str:
+    """Return the canonical UUID string, or raise ValueError naming the variable.
+
+    Unset -> '' -> Postgres raised `invalid input syntax for type uuid` on every tool;
+    left at the .env.example placeholder -> every tool answered no_data_yet. Both looked
+    like a broken server rather than a missing setup step, so main.py refuses to start.
+    """
+    value = (raw or "").strip()
+    if not value:
+        raise ValueError("HEALTHKIT_USER_ID is not set")
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        raise ValueError(f"HEALTHKIT_USER_ID={value!r} is not a UUID") from None
+    if str(parsed) == PLACEHOLDER_USER_ID:
+        raise ValueError("HEALTHKIT_USER_ID is still the .env.example placeholder")
+    return str(parsed)
 
 # Set the context var default so stdio mode works without --transport http
 current_user_id = contextvars.ContextVar('current_user_id', default=DEFAULT_USER_ID)
@@ -321,6 +360,45 @@ def _fetch_summaries_range(metric_type: str, user_id: str,
         conn.close()
 
 
+def _fetch_raw_daily_aggregates(metric_type: str, user_id: str,
+                                start_date: str, end_date: str) -> list[dict]:
+    """Day-bucketed aggregates computed IN SQL from raw samples for local days
+    [start_date, end_date]. Same buckets and fields as _daily_from_raw, but the window
+    can be years wide: the database returns one row per day, never the samples.
+
+    Why this exists: nothing on the self-hosted path ever writes
+    healthkit_daily_summaries (the summariser is a maintainer-only job), so the
+    summary tier is empty for every beta tester and every tool that reached past
+    RAW_CUTOFF_DAYS silently truncated to 30 days. Postgres and zoneinfo share the
+    IANA database, so `AT TIME ZONE TZ_NAME` buckets exactly as _local_date does.
+    """
+    start_iso, end_iso = _local_day_bounds_utc(start_date, end_date)
+    conn = _connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT (started_at AT TIME ZONE %s)::date AS day, coalesce(unit, '') AS unit,
+                       avg(value), min(value), max(value), sum(value), count(value)
+                FROM {TABLE}
+                WHERE user_id = %s AND metric_type = %s AND value IS NOT NULL
+                  AND started_at >= %s AND started_at < %s
+                GROUP BY 1, 2 ORDER BY 1, 2
+                LIMIT 10000
+                """,
+                (TZ_NAME, user_id, metric_type, start_iso, end_iso),
+            )
+            # GROUP BY unit as well as day, exactly as the summariser does (register D338):
+            # a day stored in two units (32 g and 0.032 kg) must never be summed to 32.032.
+            return [{
+                "date": str(day), "unit": unit, "avg_value": round(float(a), 4),
+                "min_value": float(lo), "max_value": float(hi), "sum_value": round(float(s), 4),
+                "sample_count": int(n), "source": "raw",
+            } for day, unit, a, lo, hi, s, n in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers (no DB calls — pure logic unchanged from prior version)
 # ---------------------------------------------------------------------------
@@ -330,23 +408,91 @@ def _since(days: int) -> str:
     return dt.isoformat()
 
 
-def _ny_date(iso: str) -> str:
-    """Convert an ISO timestamp string to America/New_York calendar date (YYYY-MM-DD)."""
+def _today_local() -> date:
+    return datetime.now(TZ).date()
+
+
+def _local_date(iso: str) -> str:
+    """Convert an ISO timestamp string to a calendar date (YYYY-MM-DD) in HEALTH4AI_TZ."""
     dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-    return dt.astimezone(NY).strftime("%Y-%m-%d")
+    return dt.astimezone(TZ).strftime("%Y-%m-%d")
+
+
+def _local_day_bounds_utc(start_date: str, end_date: str) -> tuple[str, str]:
+    """UTC ISO bounds [start, end) covering local days start_date..end_date inclusive."""
+    start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=TZ)
+    end = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=TZ) + timedelta(days=1)
+    return start.astimezone(timezone.utc).isoformat(), end.astimezone(timezone.utc).isoformat()
+
+
+def _fill_days_from_raw(metric_type: str, user_id: str, start_date: str, end_date: str,
+                        daily: dict[tuple[str, str], dict]) -> None:
+    """Older-window gap fill, keyed on (date, unit). A day keeps its summary rows where any
+    exist; every other day in [start_date, end_date] is aggregated from raw. A day is
+    never taken from both tiers."""
+    if start_date > end_date:
+        return
+    span = (date.fromisoformat(end_date) - date.fromisoformat(start_date)).days + 1
+    covered = {d for d, _unit in daily if start_date <= d <= end_date}
+    if len(covered) >= span:
+        return
+    for d in _fetch_raw_daily_aggregates(metric_type, user_id, start_date, end_date):
+        if d["date"] not in covered:
+            daily[(d["date"], d["unit"])] = d
+
+
+def _single_unit(points: list[dict]) -> tuple[list[dict], dict]:
+    """Reduce a (date, unit) series to ONE unit so a tool can present one figure per day.
+
+    Rows keep the unit they were stored in, and a metric written in two units (32 g and
+    0.032 kg on the day both app builds wrote) must never be summed or averaged across
+    them. Keeps the unit with the most days (ties: alphabetical) and reports what was
+    left out, so the caller can say so instead of silently mixing.
+    """
+    by_unit: dict[str, list[dict]] = {}
+    for p in points:
+        by_unit.setdefault(p.get("unit") or "", []).append(p)
+    if not by_unit:
+        return [], {"unit": None}
+    keep = max(sorted(by_unit), key=lambda u: len(by_unit[u]))
+    info: dict = {"unit": keep}
+    if len(by_unit) > 1:
+        info["days_in_other_units"] = {u: len(v) for u, v in by_unit.items() if u != keep}
+        info["note"] = (
+            "This metric is stored in more than one unit. Every figure here uses only the "
+            f"unit with the most days ({keep!r}); days recorded in other units are counted "
+            "under days_in_other_units and were never combined with these."
+        )
+    return by_unit[keep], info
+
+
+def _tier_status(points: list[dict]) -> dict:
+    """Which storage tier served each day of a daily series (machine-checkable)."""
+    served = {"summary": 0, "raw": 0}
+    for p in points:
+        served[p.get("source", "raw")] = served.get(p.get("source", "raw"), 0) + 1
+    return {
+        "days_served_by": served,
+        "note": (f"Days older than {RAW_CUTOFF_DAYS} days come from healthkit_daily_summaries "
+                 "where a summary exists and are aggregated from raw samples otherwise; no "
+                 "day is counted from both tiers."),
+    }
 
 
 def _daily_from_raw(rows: list[dict]) -> list[dict]:
-    """Collapse raw samples into daily aggregates (America/New_York day boundaries)."""
-    daily: dict[str, list[float]] = {}
+    """Collapse raw samples into (day, unit) aggregates (HEALTH4AI_TZ day boundaries).
+    Unit is part of the key: samples in different units are never combined."""
+    daily: dict[tuple[str, str], list[float]] = {}
     for r in rows:
         if r.get("value") is None:
             continue
-        daily.setdefault(_ny_date(str(r["started_at"])), []).append(float(r["value"]))
+        key = (_local_date(str(r["started_at"])), r.get("unit") or "")
+        daily.setdefault(key, []).append(float(r["value"]))
     out = []
-    for d, vals in sorted(daily.items()):
+    for (d, unit), vals in sorted(daily.items()):
         out.append({
             "date": d,
+            "unit": unit,
             "avg_value": round(sum(vals) / len(vals), 4),
             "min_value": min(vals),
             "max_value": max(vals),
@@ -363,27 +509,32 @@ def _get_tiered_daily(metric_type: str, user_id: str, days: int) -> list[dict]:
       - recent window (<= RAW_CUTOFF_DAYS): raw samples aggregated to daily
       - older window (> RAW_CUTOFF_DAYS): pre-aggregated daily summaries
     Returns one chronological list. Each point carries source='raw'|'summary'.
+    Older days without a summary (every self-hosted user: compaction never ran) are
+    aggregated from raw in SQL, so the window is complete either way.
     """
-    today = datetime.now(timezone.utc).date()
+    today = _today_local()
     cutoff = (today - timedelta(days=RAW_CUTOFF_DAYS)).isoformat()
     window_start = (today - timedelta(days=days)).isoformat()
 
-    # Recent raw portion (from max(window_start, cutoff) forward)
+    # Recent raw portion (from max(window_start, cutoff) forward, local-day aligned)
     raw_since = max(window_start, cutoff)
-    raw_rows = _fetch_metrics(metric_type, user_id, f"{raw_since}T00:00:00+00:00", limit=100000)
-    recent_daily = _daily_from_raw(raw_rows)
+    raw_rows = _fetch_metrics(metric_type, user_id, _local_day_bounds_utc(raw_since, raw_since)[0],
+                              limit=100000)
+    daily: dict[tuple[str, str], dict] = {
+        (d["date"], d["unit"]): d for d in _daily_from_raw(raw_rows) if d["date"] >= cutoff
+    }
 
-    # Historical summary portion — only days strictly before the raw cutoff (no overlap)
-    historical_daily: list[dict] = []
+    # Historical portion — only days strictly before the raw cutoff (no overlap). Keyed on
+    # (date, unit): the summariser writes one row per unit per day (register D338).
     if days > RAW_CUTOFF_DAYS:
         for s in _fetch_summaries(metric_type, user_id, window_start, limit=10000):
-            s_date = str(s["date"])
+            s_date, unit = str(s["date"]), s.get("unit") or ""
             if s_date < cutoff:
-                historical_daily.append({**s, "date": s_date, "source": "summary"})
+                daily[(s_date, unit)] = {**s, "date": s_date, "unit": unit, "source": "summary"}
+        older_end = (date.fromisoformat(cutoff) - timedelta(days=1)).isoformat()
+        _fill_days_from_raw(metric_type, user_id, window_start, older_end, daily)
 
-    combined = historical_daily + recent_daily
-    combined.sort(key=lambda x: x["date"])
-    return combined
+    return sorted(daily.values(), key=lambda x: (x["date"], x["unit"]))
 
 
 def _weighted_mean(points: list[dict]) -> float | None:
@@ -453,47 +604,34 @@ _CUMULATIVE_METRICS = {
 
 
 def _avg_daily_total_from_raw(rows: list[dict]) -> float | None:
-    """For cumulative metrics: sum intervals per NY calendar day, then average across days."""
-    daily: dict[str, float] = {}
-    for r in rows:
-        if r.get("value") is None:
-            continue
-        day = _ny_date(str(r["started_at"]))
-        daily[day] = daily.get(day, 0.0) + float(r["value"])
-    totals = list(daily.values())
-    return round(sum(totals) / len(totals), 1) if totals else None
+    """For cumulative metrics: sum intervals per local calendar day, then average across
+    days. Uses the unit with the most days only (see _single_unit); never adds units."""
+    points, _unit = _single_unit(_daily_from_raw(rows))
+    return _daily_total_avg(points)
 
 
 def _daily_series_for_range(metric_type: str, user_id: str,
                              start_date: str, end_date: str) -> list[dict]:
     """Daily-aggregated series for [start_date, end_date], tier-aware.
-    Dates before the raw cutoff come from daily summaries; recent dates from raw samples."""
-    cutoff = (datetime.now(timezone.utc).date() - timedelta(days=RAW_CUTOFF_DAYS)).isoformat()
-    daily: dict[str, dict] = {}
+    Dates before the raw cutoff come from daily summaries where one exists and are
+    aggregated from raw otherwise; recent dates always come from raw samples."""
+    cutoff = (_today_local() - timedelta(days=RAW_CUTOFF_DAYS)).isoformat()
+    daily: dict[tuple[str, str], dict] = {}  # keyed on (date, unit), never date alone
 
-    summary_end = min(end_date, cutoff)
-    if start_date <= summary_end:
-        for s in _fetch_summaries_range(metric_type, user_id, start_date, summary_end):
-            s_date = str(s["date"])
-            daily[s_date] = {**s, "date": s_date, "source": "summary"}
+    older_end = min(end_date, (date.fromisoformat(cutoff) - timedelta(days=1)).isoformat())
+    if start_date <= older_end:
+        for s in _fetch_summaries_range(metric_type, user_id, start_date, older_end):
+            s_date, unit = str(s["date"]), s.get("unit") or ""
+            daily[(s_date, unit)] = {**s, "date": s_date, "unit": unit, "source": "summary"}
+        _fill_days_from_raw(metric_type, user_id, start_date, older_end, daily)
 
     raw_start = max(start_date, cutoff)
     if raw_start <= end_date:
-        start_iso = (
-            datetime.strptime(raw_start, "%Y-%m-%d")
-            .replace(tzinfo=NY)
-            .astimezone(timezone.utc)
-            .isoformat()
-        )
-        end_iso = (
-            (datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=NY) + timedelta(days=1))
-            .astimezone(timezone.utc)
-            .isoformat()
-        )
+        start_iso, end_iso = _local_day_bounds_utc(raw_start, end_date)
         for d in _daily_from_raw(_fetch_metrics_range(metric_type, user_id, start_iso, end_iso)):
-            daily[d["date"]] = d
+            daily[(d["date"], d["unit"])] = d
 
-    return sorted(daily.values(), key=lambda x: x["date"])
+    return sorted(daily.values(), key=lambda x: (x["date"], x["unit"]))
 
 
 def _percentile(sorted_vals: list[float], p: float) -> float:
@@ -529,18 +667,10 @@ def get_health_summary(days: int = 7) -> dict:
         vals = [r["value"] for r in rows if r.get("value") is not None]
         return round(sum(vals) / len(vals), 1) if vals else None
 
-    def total(rows: list[dict]) -> float | None:
-        vals = [r["value"] for r in rows if r.get("value") is not None]
-        return round(sum(vals), 0) if vals else None
-
     if days > RAW_CUTOFF_DAYS:
-        steps_points = _get_tiered_daily(STEPS, uid, days)
-        hrv_points = _get_tiered_daily(HRV, uid, days)
-        rhr_points = _get_tiered_daily(RESTING_HR, uid, days)
-
-        steps_total = round(sum(p["sum_value"] for p in steps_points), 0) if steps_points else None
-        steps_daily_avg = _daily_total_avg(steps_points)
-        steps_days_with_data = len(steps_points)
+        steps_points, steps_unit = _single_unit(_get_tiered_daily(STEPS, uid, days))
+        hrv_points, _ = _single_unit(_get_tiered_daily(HRV, uid, days))
+        rhr_points, _ = _single_unit(_get_tiered_daily(RESTING_HR, uid, days))
 
         hrv_avg = _weighted_mean(hrv_points)
         hrv_latest = hrv_points[-1]["avg_value"] if hrv_points else None
@@ -548,14 +678,13 @@ def get_health_summary(days: int = 7) -> dict:
 
         rhr_avg = _weighted_mean(rhr_points)
         rhr_latest = rhr_points[-1]["avg_value"] if rhr_points else None
+        tier = _tier_status(steps_points + hrv_points + rhr_points)
+        tier["note"] += " Counts are day-points across steps, HRV and resting HR."
     else:
-        steps_rows = _fetch_metrics(STEPS, uid, since)
+        tier = None
+        steps_points, steps_unit = _single_unit(_daily_from_raw(_fetch_metrics(STEPS, uid, since)))
         hrv_rows = _fetch_metrics(HRV, uid, since)
         resting_hr_rows = _fetch_metrics(RESTING_HR, uid, since)
-
-        steps_total = total(steps_rows)
-        steps_daily_avg = _avg_daily_total_from_raw(steps_rows)
-        steps_days_with_data = len({str(r["started_at"])[:10] for r in steps_rows})
 
         hrv_avg = avg(hrv_rows)
         hrv_latest = hrv_rows[0]["value"] if hrv_rows else None
@@ -563,6 +692,11 @@ def get_health_summary(days: int = 7) -> dict:
 
         rhr_avg = avg(resting_hr_rows)
         rhr_latest = resting_hr_rows[0]["value"] if resting_hr_rows else None
+
+    # Steps from (day, unit) points in both branches — one unit, never summed across units.
+    steps_total = round(sum(p["sum_value"] for p in steps_points), 0) if steps_points else None
+    steps_daily_avg = _daily_total_avg(steps_points)
+    steps_days_with_data = len(steps_points)
 
     # Sleep: sum duration of "asleep" stages per day
     sleep_stages = [
@@ -581,6 +715,7 @@ def get_health_summary(days: int = 7) -> dict:
             "total": steps_total,
             "daily_avg": steps_daily_avg,
             "days_with_data": steps_days_with_data,
+            "unit": steps_unit,
             **({"data_status": steps_note} if steps_note else {}),
         },
         "hrv_sdnn_ms": {
@@ -600,92 +735,81 @@ def get_health_summary(days: int = 7) -> dict:
             "count": len(workout_rows),
             "types": list({(r.get("metadata") or {}).get("workout_type", "unknown") for r in workout_rows}),
         },
+        **({"tier": tier} if tier else {}),
         "data_as_of": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# HKCategoryValueSleepAnalysis: 0=InBed, 1=AsleepUnspecified, 2=Awake,
+# 3=AsleepCore, 4=AsleepDeep, 5=AsleepREM. Only 3/4/5 are true sleep stages.
+_SLEEP_STAGE_NAMES = {3.0: "core", 4.0: "deep", 5.0: "rem"}
+# Highest priority first. Anything not listed ranks below all of these and competes on
+# record count. This used to be an ALLOW list of the author's two devices, which gave
+# every Whoop / Garmin / Withings / iPhone-only user a null sleep total.
+_SLEEP_SOURCE_PRIORITY = ("oura", "apple watch", "whoop", "garmin", "withings")
+
+
+def _parse_ts(value) -> datetime:
+    return value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+
+def _sleep_night_key(started_at) -> str:
+    """A night belongs to the local day it began minus 6h (so 01:00 counts as the previous night)."""
+    return (_parse_ts(started_at).astimezone(TZ) - timedelta(hours=6)).strftime("%Y-%m-%d")
+
+
+def _sleep_source_rank(device: str) -> int:
+    d = (device or "").lower()
+    return next((i for i, name in enumerate(_SLEEP_SOURCE_PRIORITY) if name in d),
+                len(_SLEEP_SOURCE_PRIORITY))
+
+
+def _sleep_stage_rows_by_night(rows: list[dict]) -> dict[str, tuple[str, list[dict]]]:
+    """Per night, the ONE source to trust and its stage rows: the highest-priority named
+    source that has stage records that night; if none of the named ones is present, the
+    source with the most stage records. Never mixes sources within a night."""
+    by_night: dict[str, dict[str, list[dict]]] = {}
+    for row in rows:
+        if row.get("value") not in _SLEEP_STAGE_NAMES or not row.get("started_at") or not row.get("ended_at"):
+            continue
+        device = row.get("source_device") or "unknown"
+        by_night.setdefault(_sleep_night_key(row["started_at"]), {}).setdefault(device, []).append(row)
+    chosen: dict[str, tuple[str, list[dict]]] = {}
+    for night, by_device in by_night.items():
+        device = min(by_device, key=lambda d: (_sleep_source_rank(d), -len(by_device[d]), d))
+        chosen[night] = (device, by_device[device])
+    return chosen
 
 
 def get_sleep(days: int = 7) -> dict:
     """
     Sleep analysis for the past N days.
     Returns per-night breakdown with stage durations (REM, Deep/Core, Light, Awake).
-    Source priority: Oura (most accurate) > Apple Watch. Per night, only one source
-    is used — whichever has higher priority — to avoid double-counting.
+    One source per night (see _sleep_stage_rows_by_night): Oura > Apple Watch > Whoop >
+    Garmin > Withings > whichever other source has the most stage records that night.
     """
     uid = current_user_id.get()
     since = _since(days)
-    # Fetch both Oura and Apple Watch; we select one source per night below.
     rows = _fetch_metrics(SLEEP, uid, since, limit=1000)
 
-    # HKCategoryValueSleepAnalysis: 0=InBed, 1=AsleepUnspecified, 2=Awake,
-    # 3=AsleepCore, 4=AsleepDeep, 5=AsleepREM. Only count 3/4/5 (true sleep stages).
-    _STAGE_NAMES = {3.0: "core", 4.0: "deep", 5.0: "rem"}
-    _ACCEPTED_SOURCES = ("oura", "apple watch")
-
-    def _source_priority(device: str) -> int:
-        d = (device or "").lower()
-        if "oura" in d:
-            return 1
-        if "apple watch" in d:
-            return 2
-        return 9
-
-    # First pass: determine best source per night
-    night_best_priority: dict[str, int] = {}
-    for row in rows:
-        device = row.get("source_device", "") or ""
-        if not any(s in device.lower() for s in _ACCEPTED_SOURCES):
-            continue
-        if row.get("value") not in _STAGE_NAMES:
-            continue
-        started = str(row.get("started_at", ""))
-        if not started:
-            continue
-        start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
-        night_key = (start_dt - timedelta(hours=6)).strftime("%Y-%m-%d")
-        p = _source_priority(device)
-        if night_key not in night_best_priority or p < night_best_priority[night_key]:
-            night_best_priority[night_key] = p
-
-    # Second pass: build nights using only the best source per night
     nights: dict[str, dict] = {}
-    for row in rows:
-        device = row.get("source_device", "") or ""
-        if not any(s in device.lower() for s in _ACCEPTED_SOURCES):
-            continue
-        val = row.get("value")
-        if val not in _STAGE_NAMES:
-            continue
-        started = str(row["started_at"])
-        ended = row.get("ended_at")
-        if not ended:
-            continue
-        start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
-        end_dt = datetime.fromisoformat(str(ended).replace("Z", "+00:00"))
-        duration_min = round((end_dt - start_dt).total_seconds() / 60, 1)
-        night_key = (start_dt - timedelta(hours=6)).strftime("%Y-%m-%d")
-
-        if _source_priority(device) != night_best_priority.get(night_key, 9):
-            continue
-
-        if night_key not in nights:
-            nights[night_key] = {
-                "date": night_key,
-                "source": device,
-                "stages": {},
-                "total_minutes": 0,
-                "segments": [],
-            }
-
-        stage = _STAGE_NAMES[val]
-        nights[night_key]["stages"].setdefault(stage, 0)
-        nights[night_key]["stages"][stage] += duration_min
-        nights[night_key]["total_minutes"] += duration_min
-        nights[night_key]["segments"].append({
-            "stage": stage,
-            "started_at": started,
-            "ended_at": str(ended),
-            "duration_minutes": duration_min,
-        })
+    for night_key, (device, stage_rows) in _sleep_stage_rows_by_night(rows).items():
+        night = nights[night_key] = {
+            "date": night_key, "source": device, "stages": {}, "total_minutes": 0, "segments": [],
+        }
+        for row in stage_rows:
+            start_dt = _parse_ts(row["started_at"])
+            end_dt = _parse_ts(row["ended_at"])
+            duration_min = round((end_dt - start_dt).total_seconds() / 60, 1)
+            stage = _SLEEP_STAGE_NAMES[row["value"]]
+            night["stages"][stage] = night["stages"].get(stage, 0) + duration_min
+            night["total_minutes"] += duration_min
+            night["segments"].append({
+                "stage": stage,
+                "started_at": str(row["started_at"]),
+                "ended_at": str(row["ended_at"]),
+                "duration_minutes": duration_min,
+            })
 
     sorted_nights = sorted(nights.values(), key=lambda n: n["date"], reverse=True)
 
@@ -707,7 +831,7 @@ def get_hrv_trend(days: int = 30) -> dict:
     """
     days = _clamp_days(days)
     uid = current_user_id.get()
-    points = _get_tiered_daily(HRV, uid, days)
+    points, unit = _single_unit(_get_tiered_daily(HRV, uid, days))
 
     daily_avgs = [
         {"date": p["date"], "avg_hrv_ms": round(p["avg_value"], 1), "source": p["source"]}
@@ -728,6 +852,8 @@ def get_hrv_trend(days: int = 30) -> dict:
         "avg_hrv_ms": _weighted_mean(points),
         "latest_hrv_ms": daily_avgs[-1]["avg_hrv_ms"] if daily_avgs else None,
         "trend_vs_prior_week": trend,
+        "unit": unit,
+        "tier": _tier_status(points),
         "daily_averages": daily_avgs,
     }
 
@@ -880,7 +1006,7 @@ def query_metric(
     uid = current_user_id.get()
 
     if days > RAW_CUTOFF_DAYS:
-        points = _get_tiered_daily(metric_type, uid, days)
+        points, unit = _single_unit(_get_tiered_daily(metric_type, uid, days))
         _avg_fn = _daily_total_avg if metric_type in _CUMULATIVE_METRICS else _weighted_mean
         note = _absence_note(metric_type, uid, len(points))
         return {
@@ -889,6 +1015,8 @@ def query_metric(
             "granularity": "daily",
             "count": len(points),
             **({"data_status": note} if note else {}),
+            "unit": unit,
+            "tier": _tier_status(points),
             "avg": _avg_fn(points),
             "min": min((p["min_value"] for p in points if p.get("min_value") is not None), default=None),
             "max": max((p["max_value"] for p in points if p.get("max_value") is not None), default=None),
@@ -973,18 +1101,15 @@ def get_daily_snapshot(date: str = "") -> dict:
     """
     uid = current_user_id.get()
     if not date:
-        date = datetime.now(NY).strftime("%Y-%m-%d")
+        date = _today_local().isoformat()
 
     try:
         datetime.strptime(date, "%Y-%m-%d")
     except ValueError:
         return {"error": f"Invalid date format '{date}' — expected YYYY-MM-DD"}
 
-    # Compute NY midnight boundaries and convert to UTC for the DB query
-    day_start_ny = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=NY)
-    day_end_ny = day_start_ny + timedelta(days=1)
-    day_start = day_start_ny.astimezone(timezone.utc).isoformat()
-    day_end = day_end_ny.astimezone(timezone.utc).isoformat()
+    # Local (HEALTH4AI_TZ) midnight boundaries, converted to UTC for the DB query
+    day_start, day_end = _local_day_bounds_utc(date, date)
 
     rows = _fetch_metrics_snapshot(uid, day_start, day_end, limit=1000)
 
@@ -1068,7 +1193,8 @@ def get_long_term_trend(
     """
     months = max(1, min(int(months), MAX_MONTHS))
     uid = current_user_id.get()
-    points = _get_tiered_daily(metric_type, uid, months * 30)
+    # months*30 can reach 3600; the day window is capped at MAX_DAYS so both caps agree.
+    points, unit = _single_unit(_get_tiered_daily(metric_type, uid, _clamp_days(months * 30)))
     if not points:
         return {"metric_type": metric_type, "months": months, "data": [],
                 "note": "No data found for this metric/window"}
@@ -1094,6 +1220,8 @@ def get_long_term_trend(
         "overall_avg": _avg_fn(points),
         "overall_min": min((p["min_value"] for p in points if p.get("min_value") is not None), default=None),
         "overall_max": max((p["max_value"] for p in points if p.get("max_value") is not None), default=None),
+        "unit": unit,
+        "tier": _tier_status(points),
         "monthly_trend": monthly_trend,
         "daily_data": [
             {"date": p["date"], "avg": p.get("avg_value"), "min": p.get("min_value"),
@@ -1176,7 +1304,7 @@ def get_coaching_brief() -> dict:
 
     hrv_14d = _fetch_metrics(HRV, uid, since_14d, limit=200)
     rhr_14d = _fetch_metrics(RESTING_HR, uid, since_14d, limit=50)
-    sleep_14d = _fetch_metrics(SLEEP, uid, since_14d, limit=500, source_filter="Oura")
+    sleep_14d = _fetch_metrics(SLEEP, uid, since_14d, limit=500)
     workouts_30d = _fetch_metrics(WORKOUT, uid, since_30d, limit=50)
     steps_7d = _fetch_metrics(STEPS, uid, since_7d, limit=500)
     # Tier-aware: VO2Max readings are infrequent (Watch Cardio Fitness), so the most
@@ -1207,17 +1335,14 @@ def get_coaching_brief() -> dict:
         hrv_delta = delta
         hrv_status = "improving" if delta > 2 else "declining" if delta < -2 else "stable"
 
-    # Sleep: sum Core+Deep+REM segments only (value 3/4/5).
+    # Sleep: Core+Deep+REM only (value 3/4/5), one source per night — same selection
+    # as get_sleep, instead of the hard Oura filter that nulled sleep for everyone else.
     nights: dict[str, float] = {}
-    for row in sleep_14d:
-        if row.get("value") not in (3.0, 4.0, 5.0):
-            continue
-        if not row.get("ended_at"):
-            continue
-        start = datetime.fromisoformat(str(row["started_at"]).replace("Z", "+00:00"))
-        end = datetime.fromisoformat(str(row["ended_at"]).replace("Z", "+00:00"))
-        night_key = (start - timedelta(hours=6)).strftime("%Y-%m-%d")
-        nights[night_key] = nights.get(night_key, 0) + (end - start).total_seconds() / 3600
+    for night_key, (_device, stage_rows) in _sleep_stage_rows_by_night(sleep_14d).items():
+        nights[night_key] = sum(
+            (_parse_ts(r["ended_at"]) - _parse_ts(r["started_at"])).total_seconds() / 3600
+            for r in stage_rows
+        )
 
     recent_nights = sorted(nights.items(), reverse=True)[:7]
     avg_sleep_h = round(sum(h for _, h in recent_nights) / len(recent_nights), 1) if recent_nights else None
@@ -1271,6 +1396,7 @@ def get_coaching_brief() -> dict:
         },
         "fitness_markers": {
             "vo2max_latest": vo2_points[-1]["avg_value"] if vo2_points else None,
+            "vo2max_source_tier": vo2_points[-1]["source"] if vo2_points else None,
             "weight_kg_latest": latest(weight_rows),
             "weight_kg_30d_ago": weight_rows[-1]["value"] if len(weight_rows) > 1 else None,
         },
@@ -1302,10 +1428,10 @@ def search_records(
     uid = current_user_id.get()
     days = _clamp_days(days)
     limit = _clamp_limit(limit)
-    today = datetime.now(NY).strftime("%Y-%m-%d")
-    start_date = (datetime.now(NY) - timedelta(days=days)).strftime("%Y-%m-%d")
+    today = _today_local().isoformat()
+    start_date = (_today_local() - timedelta(days=days)).isoformat()
 
-    points = _daily_series_for_range(metric_type, uid, start_date, today)
+    points, unit = _single_unit(_daily_series_for_range(metric_type, uid, start_date, today))
     is_cumulative = metric_type in _CUMULATIVE_METRICS
     value_key = "sum_value" if is_cumulative else "avg_value"
 
@@ -1329,6 +1455,8 @@ def search_records(
         "days_matched": len(matching),
         "filters": {"min_value": min_value, "max_value": max_value},
         "value_type": "daily_total" if is_cumulative else "daily_avg",
+        "unit": unit,
+        "tier": _tier_status(points),
         "results": matching[:limit],
     }
 
@@ -1354,10 +1482,10 @@ def get_metric_stats(
     """
     uid = current_user_id.get()
     days = _clamp_days(days)
-    today = datetime.now(NY).strftime("%Y-%m-%d")
-    start_date = (datetime.now(NY) - timedelta(days=days)).strftime("%Y-%m-%d")
+    today = _today_local().isoformat()
+    start_date = (_today_local() - timedelta(days=days)).isoformat()
 
-    points = _daily_series_for_range(metric_type, uid, start_date, today)
+    points, unit = _single_unit(_daily_series_for_range(metric_type, uid, start_date, today))
     is_cumulative = metric_type in _CUMULATIVE_METRICS
     value_key = "sum_value" if is_cumulative else "avg_value"
 
@@ -1384,6 +1512,8 @@ def get_metric_stats(
         "period_days": days,
         "data_points": n,
         "value_type": "daily_total" if is_cumulative else "daily_avg",
+        "unit": unit,
+        "tier": _tier_status(points),
         "min": round(values[0], 2),
         "max": round(values[-1], 2),
         "mean": round(mean, 2),
@@ -1449,7 +1579,7 @@ def compare_periods(
             return {"metric_type": metric_type, "error": err}
 
     def _period_stats(start: str, end: str) -> dict:
-        pts = _daily_series_for_range(metric_type, uid, start, end)
+        pts, unit = _single_unit(_daily_series_for_range(metric_type, uid, start, end))
         values = sorted([p[value_key] for p in pts if p.get(value_key) is not None])
         avg = _avg_fn(pts) if pts else None
         return {
@@ -1459,6 +1589,8 @@ def compare_periods(
             "avg": avg,
             "min": round(values[0], 2) if values else None,
             "max": round(values[-1], 2) if values else None,
+            "unit": unit,
+            "tier": _tier_status(pts),
         }
 
     a = _period_stats(period_a_start, period_a_end)

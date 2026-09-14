@@ -64,9 +64,15 @@ pip install -r mcp-server/requirements.txt
 - `DATABASE_URL` — your project's **Transaction pooler** connection string. The password in it is
   your **database password**, not the service_role key or the anon key.
 - `HEALTHKIT_USER_ID` — the **UID** you copied in Step 3. It must be that exact UUID; an email
-  address will not match anything.
+  address will not match anything. The server refuses to start (with a message naming the
+  variable) while it is unset, not a UUID, or still the `00000000-…` placeholder.
+- `HEALTH4AI_TZ` — optional IANA zone, default `UTC`. Daily totals, snapshots, trends and sleep
+  nights are bucketed by this zone's midnight, so set it to where you live
+  (e.g. `HEALTH4AI_TZ=America/New_York`).
 
-`mcp-server/.env.example` documents every variable the server reads.
+`mcp-server/.env.example` documents every variable the server reads. The server is stdio-only;
+there is no HTTP transport to configure. Queries older than 30 days work without any summariser
+job: days that have no `healthkit_daily_summaries` row are aggregated from raw samples in SQL.
 
 ## Step 6: Add it to your AI client
 

@@ -1,17 +1,19 @@
 """
 health4ai — MCP Server
-Exposes Apple Health data from Supabase as MCP tool calls.
+Exposes Apple Health data from YOUR Supabase project as MCP tool calls.
 
-Modes:
-  stdio (default): python main.py
-  http  (hosted):  python main.py --transport http [--port 8000]
-    Auth: Bearer h4_mk_... in Authorization header
-    Each request is scoped to the user identified by the MCP API key.
+Transport: stdio only (`python main.py`), the way Claude Desktop, Claude Code, Cursor and
+mcphost launch it. The HTTP transport and its Bearer-key middleware were removed: the key
+lookup read healthkit_api_keys, which supabase/migrations/007_drop_hosted_tier.sql dropped,
+so every key returned 503 and the only working path was a flag that disabled auth. Nothing
+in README.md or docs/ documents HTTP use.
+
+Startup refuses to run with an unusable HEALTHKIT_USER_ID (unset, not a UUID, or the
+.env.example placeholder) — those used to surface as a Postgres uuid error or as
+"no_data_yet" on every tool, which reads like a broken server rather than a setup step.
 """
 
-import argparse
-import hashlib
-import os
+import sys
 
 from dotenv import load_dotenv
 from fastmcp import FastMCP
@@ -29,11 +31,14 @@ from tools import (
     get_metric_stats,
     compare_periods,
     current_user_id,
+    validate_user_id,
     DEFAULT_USER_ID,
-    _connect,
+    TZ_NAME,
 )
 
 load_dotenv()
+
+SETUP_DOC = "docs/SETUP.md (Step 3 and Step 5)"
 
 mcp = FastMCP(
     name="health4ai",
@@ -53,91 +58,29 @@ mcp.tool()(get_metric_stats)
 mcp.tool()(compare_periods)
 
 
-def _resolve_user_from_mcp_key(mcp_api_key: str) -> str | None:
-    """Look up user_id from mcp_api_key hash in healthkit_api_keys."""
-    key_hash = hashlib.sha256(mcp_api_key.encode()).hexdigest()
+def check_startup_config(raw_user_id: str | None) -> str:
+    """Validate HEALTHKIT_USER_ID before the server starts; returns the canonical UUID.
+
+    Exits with status 2 and a message naming the variable on failure. Everything goes to
+    stderr: stdout is the MCP stdio channel and must carry nothing but protocol frames.
+    """
     try:
-        conn = _connect()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT user_id FROM healthkit_api_keys "
-                    "WHERE mcp_api_key_hash = %s AND NOT revoked",
-                    (key_hash,),
-                )
-                row = cur.fetchone()
-                return str(row[0]) if row else None
-        finally:
-            conn.close()
-    except Exception as e:
-        # Distinguish DB errors from missing-key (None) so callers can return 503 vs 401
-        raise RuntimeError(f"DB error during key resolution: {e}") from e
+        return validate_user_id(raw_user_id)
+    except ValueError as e:
+        print(
+            f"health4ai: {e}. Set HEALTHKIT_USER_ID in mcp-server/.env to the UID of your "
+            f"Supabase Auth user (Authentication -> Users). See {SETUP_DOC}.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
-    parser.add_argument("--port", type=int, default=8000)
-    args = parser.parse_args()
-
-    if args.transport == "http":
-        # HTTP mode: FastMCP 3.x http_app with Starlette middleware for per-request auth
-        from starlette.middleware import Middleware
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.requests import Request as StarletteRequest
-        from starlette.responses import JSONResponse, Response
-        import uvicorn
-
-        class AuthMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request: StarletteRequest, call_next):
-                # Health check for Cloudflare tunnel and uptime monitors
-                if request.method == "GET" and request.url.path in ("/", "/health"):
-                    return Response(
-                        '{"status":"ok","service":"health4ai-mcp"}',
-                        media_type="application/json",
-                    )
-                auth = request.headers.get("Authorization", "")
-                if auth.startswith("Bearer h4_mk_"):
-                    mcp_key = auth[7:]
-                    try:
-                        uid = _resolve_user_from_mcp_key(mcp_key)
-                    except RuntimeError:
-                        return JSONResponse({"error": "Service temporarily unavailable"}, status_code=503)
-                    if not uid:
-                        return JSONResponse({"error": "Invalid or revoked MCP API key"}, status_code=401)
-                    token = current_user_id.set(uid)
-                    try:
-                        response = await call_next(request)
-                    finally:
-                        current_user_id.reset(token)
-                    return response
-                elif DEFAULT_USER_ID and os.environ.get("MCP_AUTH_ENABLED", "").lower() == "true":
-                    # Dev bypass explicitly opted in: single-user stdio-style access via HTTP
-                    return await call_next(request)
-                else:
-                    return JSONResponse({"error": "Authorization required"}, status_code=401)
-
-        app = mcp.http_app(middleware=[Middleware(AuthMiddleware)])
-        # Bind LOOPBACK by default, not 0.0.0.0.
-        #
-        # This host sits on a PUBLIC IP with no NAT (en0 == egress ==
-        # 32.218.210.216, verified 2026-08-17), so `0.0.0.0` here did not mean
-        # "the LAN" — it meant the open internet. Proven, not theorised: an
-        # unauthenticated MCP `initialize` sent to http://32.218.210.216:8091/mcp
-        # from outside completed with HTTP 200 and returned this server's full
-        # tool capabilities, advertising "Query your Apple Health data — sleep,
-        # HRV, workouts, steps."
-        #
-        # It got through because MCP_AUTH_ENABLED=true is set in
-        # com.health4ai.mcp-server.plist, which activates the DEV BYPASS at the
-        # `elif` above — the flag reads like it turns auth ON and in fact turns it
-        # OFF. The bypass is survivable behind loopback; it was not survivable
-        # bound to a public interface.
-        #
-        # The intended public path is the Cloudflare tunnel, whose ingress is
-        # `mcp.health4.ai -> http://localhost:8091` — loopback satisfies it, so
-        # this change costs nothing and Access policies are no longer bypassable
-        # by dialling the IP directly. Override only with a deliberate reason.
-        uvicorn.run(app, host=os.environ.get("MCP_BIND_HOST", "127.0.0.1"), port=args.port)
-    else:
-        mcp.run()
+    user_id = check_startup_config(DEFAULT_USER_ID)
+    current_user_id.set(user_id)
+    print(
+        f"health4ai MCP server: stdio transport; day boundaries follow HEALTH4AI_TZ={TZ_NAME}; "
+        f"user {user_id}",
+        file=sys.stderr,
+    )
+    mcp.run()
