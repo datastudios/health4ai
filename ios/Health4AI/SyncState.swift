@@ -157,6 +157,9 @@ final class SyncState: ObservableObject {
     /// nothing — the only detectable symptom of a denied per-type Health permission.
     /// See `BulkExportManager.alwaysExpectedIdentifiers`.
     @Published var emptyExpectedMetricNames: [String] = []
+    /// Human-readable names of metrics whose last import stopped on an error. They retry on
+    /// the next run. See `BulkExportManager.failedImportTypes`.
+    @Published var importFailedMetricNames: [String] = []
 
     /// The server answered without `merged_hours_v1`, so step, distance and energy totals are
     /// still sent per device and summed twice wherever an iPhone and a Watch both counted.
@@ -287,6 +290,21 @@ final class SyncState: ObservableObject {
             self.lastSyncDate = Date()
             self.serverLacksMergedHours = true
         }
+        // Same, for the failed-import warning on the import card: an import that stopped on an
+        // error for some types, not running and not complete. "…Many" shows the capped list.
+        let failedOne = ProcessInfo.processInfo.arguments.contains("-h4aiScreenshotImportFailed")
+        let failedMany = ProcessInfo.processInfo.arguments.contains("-h4aiScreenshotImportFailedMany")
+        if failedOne || failedMany {
+            self.isAuthenticated = true
+            self.lifetimeSyncedRecords = max(self.lifetimeSyncedRecords, 1)
+            self.lastSyncDate = Date()
+            self.isBackfilling = false
+            self.backfillCompleted = false
+            self.importFailedMetricNames = failedMany
+                ? ["Active Energy", "Flights Climbed", "Heart Rate", "Sleep Analysis",
+                   "VO2 Max", "Walking + Running Distance", "Workouts"]
+                : ["Walking + Running Distance"]
+        }
         #endif
     }
 
@@ -399,6 +417,7 @@ final class SyncState: ObservableObject {
         nextScheduledSync = nil
         backgroundDeliveryFailedTypes = []
         emptyExpectedMetricNames = []
+        importFailedMetricNames = []
     }
 
     // MARK: - Computed helpers

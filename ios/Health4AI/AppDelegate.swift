@@ -68,6 +68,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             await BulkExportManager.shared.applyStuckTypeMigrationIfNeeded(syncState: syncState)
             await BulkExportManager.shared.applyMergedHoursResendIfNeeded(syncState: syncState)
             await BulkExportManager.shared.publishEmptyExpectedTypes(syncState: syncState)
+            await BulkExportManager.shared.publishFailedImportTypes(syncState: syncState)
             if BulkExportManager.shared.backfillNeeded {
                 BulkExportManager.shared.startBackfill(syncState: syncState)
             }

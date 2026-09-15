@@ -33,6 +33,8 @@ final class BulkExportManager {
     private static let horizonFloorKey = "hkb.backfill.horizonFloor"
     // Types that finished a full floor→now sweep having returned zero samples
     private static let emptyHighVolumeTypesKey = "hkb.backfill.emptyHighVolumeTypes"
+    // Types whose most recent sweep threw, kept until that type completes
+    private static let failedImportTypesKey = "hkb.backfill.failedTypes"
 
     /// Types that any iPhone-carrying user necessarily has years of data for.
     ///
@@ -59,8 +61,34 @@ final class BulkExportManager {
         case HKQuantityTypeIdentifier.heartRate.rawValue:               return "Heart Rate"
         case HKQuantityTypeIdentifier.distanceWalkingRunning.rawValue:  return "Walking + Running Distance"
         case HKQuantityTypeIdentifier.activeEnergyBurned.rawValue:      return "Active Energy"
-        default:                                                        return identifier
+        default:                                                        return readableName(for: identifier)
         }
+    }
+
+    /// "HKQuantityTypeIdentifierFlightsClimbed" → "Flights Climbed", "…VO2Max" → "VO2 Max".
+    /// Any of the ~120 types can fail an import, and a warning that shows an HK type string
+    /// names nothing the user recognises. An uppercase run stays together ("SDNN").
+    static func readableName(for identifier: String) -> String {
+        if identifier == "HKWorkoutTypeIdentifier" { return "Workouts" }
+        let prefixes = ["HKQuantityTypeIdentifier", "HKCategoryTypeIdentifier",
+                        "HKCorrelationTypeIdentifier", "HKDataTypeIdentifier"]
+        var name = Substring(identifier)
+        if let prefix = prefixes.first(where: { name.hasPrefix($0) }) {
+            name = name.dropFirst(prefix.count)
+        }
+        let chars = Array(name)
+        var words = ""
+        for (i, ch) in chars.enumerated() {
+            if i > 0, ch.isUppercase {
+                let prev = chars[i - 1]
+                let nextIsLower = i + 1 < chars.count && chars[i + 1].isLowercase
+                if prev.isLowercase || prev.isNumber || (prev.isUppercase && nextIsLower) {
+                    words.append(" ")
+                }
+            }
+            words.append(ch)
+        }
+        return words.isEmpty ? identifier : words
     }
 
     /// Subset of `alwaysExpectedIdentifiers` whose last full sweep returned nothing.
@@ -71,6 +99,34 @@ final class BulkExportManager {
         set {
             UserDefaults.standard.set(Array(newValue), forKey: Self.emptyHighVolumeTypesKey)
         }
+    }
+
+    /// Types whose most recent sweep threw, removed when the type later completes.
+    ///
+    /// Persisted, because the retry only happens on a later run. Until 2026-09-15 the failure
+    /// lived only in `SyncState.backfillError`, which no screen read: the card fell back to the
+    /// plain "Run Import" prompt, identical to an import that never ran. That is how Walking +
+    /// Running Distance and Flights Climbed sat half re-sent on a real account with nothing on
+    /// screen. Register D361.
+    private(set) var failedImportTypes: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: Self.failedImportTypesKey) ?? [])
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: Self.failedImportTypesKey)
+        }
+    }
+
+    /// Double-counted activity types first, then by identifier.
+    ///
+    /// `sampleTypes()` is a Set, so the sweep order used to change every launch, and the one-time
+    /// step, distance and energy re-send could wait hours behind a heart-rate import of millions
+    /// of samples. A fixed order also makes a resumed run pick up where a user expects.
+    static func importOrder(_ a: HKSampleType, _ b: HKSampleType) -> Bool {
+        let aFirst = HealthKitManager.doubleCountedActivityIdentifiers.contains(a.identifier)
+        let bFirst = HealthKitManager.doubleCountedActivityIdentifiers.contains(b.identifier)
+        if aFirst != bFirst { return aFirst }
+        return a.identifier < b.identifier
     }
 
     // UIKit background task token — keeps the app alive ~30s after going to background
@@ -214,7 +270,7 @@ final class BulkExportManager {
     /// cancelBackfill() only *requests* cancellation and clears currentTask synchronously,
     /// so an immediate startBackfill() passes its `currentTask == nil` guard and a SECOND
     /// runBackfill begins while the first is still unwinding — both then read-modify-write
-    /// completedTypes and emptyHighVolumeTypes from different executors, and both report
+    /// completedTypes, emptyHighVolumeTypes and failedImportTypes from different executors, and both report
     /// progress from their own local counters, which can make the on-screen count jump
     /// backwards. Any restart path must await this, not cancelBackfill().
     func cancelAndWait() async {
@@ -228,7 +284,9 @@ final class BulkExportManager {
 
     private func runBackfill(syncState: SyncState) async {
         let allTypes = HealthKitManager.sampleTypes()
-        let remainingTypes = allTypes.filter { !completedTypes.contains($0.identifier) }
+        let remainingTypes = allTypes
+            .filter { !completedTypes.contains($0.identifier) }
+            .sorted(by: Self.importOrder)
 
         // posted = samples handed to the server; stored = rows the server says it wrote.
         // They diverge sharply on a re-sweep, because the endpoint upserts and most of a
@@ -288,6 +346,9 @@ final class BulkExportManager {
                 completed.insert(sampleType.identifier)
                 completedTypes = completed
                 typesCompleted += 1
+                var failed = failedImportTypes
+                failed.remove(sampleType.identifier)
+                failedImportTypes = failed
 
                 // A full sweep of a type that cannot legitimately be empty, returning
                 // nothing, is the app's only observable symptom of a denied read
@@ -313,7 +374,14 @@ final class BulkExportManager {
                 // type's checkpoint/completion — leaving it out of `completedTypes` means
                 // the next startBackfill() call retries it from the same checkpoint instead
                 // of silently treating a real failure as "nothing more to sync."
+                // A cancel does not always arrive as CancellationError: one that lands during
+                // postSamples' final attempt surfaces as URLError(.cancelled), with no retry sleep
+                // left to convert it. Recording that as a failure would warn about a user's Cancel.
+                if Task.isCancelled { break }
                 print("[BulkExport] Error on \(sampleType.identifier): \(error)")
+                var failed = failedImportTypes
+                failed.insert(sampleType.identifier)
+                failedImportTypes = failed
                 await MainActor.run {
                     syncState.backfillError = "\(sampleType.identifier): \(error.localizedDescription)"
                 }
@@ -321,7 +389,11 @@ final class BulkExportManager {
         }
 
         let emptyNames = emptyHighVolumeTypes.map(Self.displayName(for:)).sorted()
-        await MainActor.run { syncState.emptyExpectedMetricNames = emptyNames }
+        let failedNames = failedImportTypes.map(Self.displayName(for:)).sorted()
+        await MainActor.run {
+            syncState.emptyExpectedMetricNames = emptyNames
+            syncState.importFailedMetricNames = failedNames
+        }
 
         if !Task.isCancelled {
             if typesCompleted == totalTypes {
@@ -644,6 +716,12 @@ final class BulkExportManager {
         await MainActor.run { syncState.emptyExpectedMetricNames = names }
     }
 
+    /// Republishes the stored failed-import warning at launch, for the same reason.
+    func publishFailedImportTypes(syncState: SyncState) async {
+        let names = failedImportTypes.map(Self.displayName(for:)).sorted()
+        await MainActor.run { syncState.importFailedMetricNames = names }
+    }
+
     /// Re-arm ONLY these types, leaving every other type's progress intact.
     ///
     /// The full resetBackfill() is almost never what a user wants after fixing a
@@ -664,6 +742,11 @@ final class BulkExportManager {
             // bound left behind would stop it a year short.
             defaults.removeObject(forKey: Self.chunkUntilPrefix + identifier)
         }
+        // A re-armed type starts clean; if it fails again the run records it again.
+        var failed = failedImportTypes
+        failed.subtract(identifiers)
+        failedImportTypes = failed
+        syncState.importFailedMetricNames = failed.map(Self.displayName(for:)).sorted()
         var empties = emptyHighVolumeTypes
         empties.subtract(identifiers)
         emptyHighVolumeTypes = empties
@@ -678,6 +761,10 @@ final class BulkExportManager {
         UserDefaults.standard.removeObject(forKey: "hkb.backfillCompleted")
         UserDefaults.standard.removeObject(forKey: "hkb.backfillProgress")
         UserDefaults.standard.removeObject(forKey: Self.backfillInProgressKey)
+        // Clears the stored list only; the published names are the caller's. Both callers are safe
+        // today: ConnectionView erases SyncState right after, and Re-run Import only offers this
+        // once backfillCompleted, which runBackfill latches only with the failed list empty.
+        UserDefaults.standard.removeObject(forKey: Self.failedImportTypesKey)
         // Clear all per-type chunk checkpoints and window ends, and the persisted floor so
         // the fresh run computes one for whatever the horizon is now.
         let defaults = UserDefaults.standard

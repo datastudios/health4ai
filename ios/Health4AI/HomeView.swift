@@ -97,34 +97,49 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    statusCard
-                    scopeCard
-                    mcpCard
-                    healthAccessCard
-                    backfillCard
-                    actionsCard
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 20) {
+                        statusCard
+                        scopeCard
+                        mcpCard
+                        healthAccessCard
+                        backfillCard
+                            .id(Self.backfillCardID)
+                        actionsCard
+                    }
+                    .padding()
                 }
-                .padding()
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("health4ai")
-            .navigationBarTitleDisplayMode(.large)
-            .sheet(isPresented: $showMCPSetup) {
-                MCPSetupView()
-                    .environmentObject(syncState)
-            }
-            .task { await refreshHealthPromptState() }
-            .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { tick = $0 }
-            .onChange(of: scenePhase) { _, phase in
-                // Coming back from Settings or the Health app can change access.
-                if phase == .active {
-                    Task { await refreshHealthPromptState() }
+                #if DEBUG
+                // Design-gate screenshots only: the import card sits below the fold, and simctl
+                // cannot scroll. Paired with the launch arguments in SyncState.init.
+                .onAppear {
+                    let args = ProcessInfo.processInfo.arguments
+                    if args.contains("-h4aiScreenshotImportFailed") || args.contains("-h4aiScreenshotImportFailedMany") {
+                        proxy.scrollTo(Self.backfillCardID, anchor: .top)
+                    }
+                }
+                #endif
+                .background(Color(.systemGroupedBackground))
+                .navigationTitle("health4ai")
+                .navigationBarTitleDisplayMode(.large)
+                .sheet(isPresented: $showMCPSetup) {
+                    MCPSetupView()
+                        .environmentObject(syncState)
+                }
+                .task { await refreshHealthPromptState() }
+                .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { tick = $0 }
+                .onChange(of: scenePhase) { _, phase in
+                    // Coming back from Settings or the Health app can change access.
+                    if phase == .active {
+                        Task { await refreshHealthPromptState() }
+                    }
                 }
             }
         }
     }
+
+    private static let backfillCardID = "backfillCard"
 
     // MARK: - Status card
 
@@ -556,16 +571,28 @@ struct HomeView: View {
                     emptyMetricsWarning
                 }
             } else {
-                // Says what the import setting will actually do; "all historical records"
-                // under the one-year default would be a claim the sweep does not honour.
-                Text(syncState.importHorizon == .everything
-                     ? "Import all historical health records from HealthKit."
-                     : "Import the last year of health records from HealthKit.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Button("Run Import") {
-                    BulkExportManager.shared.startBackfill(syncState: syncState)
+                if !syncState.importFailedMetricNames.isEmpty {
+                    // Replaces the first-run caption: that caption reads as if nothing has run,
+                    // and it would sit between the warning and the button the warning names.
+                    importFailedWarning
+                } else {
+                    // Says what the import setting will actually do; "all historical records"
+                    // under the one-year default would be a claim the sweep does not honour.
+                    Text(syncState.importHorizon == .everything
+                         ? "Import all historical health records from HealthKit."
+                         : "Import the last year of health records from HealthKit.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
+                // The failed-import warning names this button as the recovery, so it gets the
+                // same 44pt bordered treatment as the card's other actions (design.md).
+                Button {
+                    BulkExportManager.shared.startBackfill(syncState: syncState)
+                } label: {
+                    Text("Run Import")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
                 .disabled(!syncState.isAuthenticated)
             }
         }
@@ -576,6 +603,35 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// The last import stopped on an error for these metrics. Without this the card fell back
+    /// to the plain "Run Import" prompt, identical to an import that never ran, while the
+    /// failure sat in `backfillError`, which nothing displays.
+    private var importFailedWarning: some View {
+        let names = syncState.importFailedMetricNames
+        // Any of ~120 types can fail; past five the list would push the button off screen.
+        let shown = names.count > 5 ? Array(names.prefix(4)) + ["\(names.count - 4) more"] : names
+        return VStack(alignment: .leading, spacing: 10) {
+            // Orange on the symbol only, as in emptyMetricsWarning (orange text is 2.31:1).
+            Label {
+                Text("Import didn't finish for \(names.count) metric\(names.count == 1 ? "" : "s")")
+                    .foregroundStyle(.primary)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+            }
+            .font(.subheadline.weight(.medium))
+            Text(shown.formatted(.list(type: .and)))
+                .font(.caption.weight(.medium))
+            // Names Run Import only while it is enabled; signed out, the button is disabled.
+            Text(syncState.isAuthenticated
+                 ? "The import retries the next time you open the app, or tap Run Import now. Data already imported is kept."
+                 : "The import retries after you sign in. Data already imported is kept.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     /// Backfill finished, but metrics that cannot legitimately be empty came back with
