@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">Sleep stages · per night</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_sleep(days: int) → [&#123;date, duration_hours, rem_hours, core_hours, deep_hours, awake_hours, efficiency_pct&#125;]
+            get_sleep(days: int = 7) → &#123;period_days, avg_sleep_hours, nights: [&#123;date, source, stages, total_minutes, segments&#125;]&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Per-night sleep stage breakdown.</p>
+          <p class="text-neutral-400 text-sm mb-4">Per-night sleep stage breakdown (core/deep/rem minutes). One source per night by priority.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -15,16 +15,17 @@
             </div>
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "date": "2026-06-17",
-  "duration_hours": 7.5,
-  "rem_hours": 1.8,
-  "core_hours": 4.2,
-  "deep_hours": 1.1,
-  "awake_hours": 0.4,
-  "efficiency_pct": 94.7
-}]`}</code></pre>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "period_days": 7,
+  "avg_sleep_hours": 7.5,
+  "nights": [{
+    "date": "2026-06-17",
+    "source": "Apple Watch",
+    "stages": {"core": 252.0, "deep": 66.0, "rem": 108.0},
+    "total_minutes": 426.0,
+    "segments": [{"stage": "deep", "duration_minutes": 22.0, "...": "..."}]
+  }]
+}`}</code></pre>
             </div>
           </div>
         </div>
-
