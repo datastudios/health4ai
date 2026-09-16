@@ -1,0 +1,28 @@
+        <!-- get_hrv_trend -->
+        <div class="border border-neutral-800 rounded-lg p-6 bg-neutral-900/40">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+            <code class="text-green-400 font-mono font-bold text-base">get_hrv_trend</code>
+            <span class="text-neutral-600 text-xs font-mono">HRV · trend delta</span>
+          </div>
+          <p class="text-amber-400 font-mono text-xs mb-3">
+            get_hrv_trend(days: int) → &#123;daily: [&#123;date, hrv_sdnn_ms&#125;], trend_vs_prior_week_pct&#125;
+          </p>
+          <p class="text-neutral-400 text-sm mb-4">Daily HRV (SDNN) with trend delta vs prior period.</p>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
+              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Is my HRV improving?"</div>
+            </div>
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "daily": [
+    {"date": "2026-06-17", "hrv_sdnn_ms": 54.2},
+    {"date": "2026-06-16", "hrv_sdnn_ms": 49.8}
+  ],
+  "trend_vs_prior_week_pct": 6.3
+}`}</code></pre>
+            </div>
+          </div>
+        </div>
+
