@@ -1,0 +1,75 @@
+import Layout from '../layouts/Layout.astro';
+---
+<Layout
+  title="Docs — health4.ai setup, MCP tools & guides"
+  description="health4.ai documentation hub: 15-minute setup checklist, MCP tools reference, comparisons, and GitHub guides for Apple Health + AI."
+>
+  <nav class="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
+    <a href="/" class="text-green-400 font-bold text-lg tracking-tight hover:opacity-80 transition-opacity">health4.ai</a>
+    <div class="flex gap-6 text-sm text-neutral-500">
+      <a href="/setup" class="hover:text-neutral-300 transition-colors">Setup</a>
+      <a href="/mcp-tools" class="hover:text-neutral-300 transition-colors hidden sm:inline">MCP tools</a>
+      <a href="/compare" class="hover:text-neutral-300 transition-colors hidden sm:inline">Compare</a>
+      <a href="/" class="hover:text-neutral-300 transition-colors">Home</a>
+    </div>
+  </nav>
+
+  <main class="px-6 py-12 max-w-5xl mx-auto">
+    <div class="mb-14 max-w-2xl">
+      <div class="text-green-500 text-xs font-mono mb-3 tracking-widest uppercase">Documentation</div>
+      <h1 class="text-3xl font-bold text-white mb-4">Docs</h1>
+      <p class="text-neutral-400 text-sm leading-relaxed">
+        Short links to everything you need to run health4.ai — from a verified ~15-minute setup to the MCP tools reference and honest comparisons.
+      </p>
+    </div>
+
+    <section class="mb-16 grid sm:grid-cols-2 gap-4">
+      <a href="/setup" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
+        <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Start here</div>
+        <h2 class="text-white font-semibold text-base mb-2">Setup checklist</h2>
+        <p class="text-neutral-500 text-sm leading-relaxed">Verified ~15-minute path: Supabase → schema → edge function → invite-only TestFlight → MCP server → verify tools.</p>
+      </a>
+      <a href="/mcp-tools" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
+        <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Reference</div>
+        <h2 class="text-white font-semibold text-base mb-2">MCP tools</h2>
+        <p class="text-neutral-500 text-sm leading-relaxed">All 11 FastMCP tools: signatures, return shapes, and example prompts.</p>
+      </a>
+      <a href="/compare" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
+        <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Positioning</div>
+        <h2 class="text-white font-semibold text-base mb-2">Compare alternatives</h2>
+        <p class="text-neutral-500 text-sm leading-relaxed">health4.ai vs Health Auto Export, ChatGPT Health, export+npx MCP, and more.</p>
+      </a>
+      <a href="/how-it-works" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
+        <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Architecture</div>
+        <h2 class="text-white font-semibold text-base mb-2">How it works</h2>
+        <p class="text-neutral-500 text-sm leading-relaxed">HealthKit → your Supabase → local MCP → Claude, Cursor, and any MCP client.</p>
+      </a>
+    </section>
+
+    <section class="mb-16 max-w-2xl">
+      <h2 class="text-white font-semibold text-sm mb-4 uppercase tracking-widest">GitHub guides</h2>
+      <ul class="space-y-3 text-sm">
+        <li>
+          <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" target="_blank" rel="noopener" class="text-green-400 hover:underline">docs/SETUP.md</a>
+          <span class="text-neutral-500"> — full setup detail (schema, edge function, MCP env, verify)</span>
+        </li>
+        <li>
+          <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/TESTFLIGHT-BETA.md" target="_blank" rel="noopener" class="text-green-400 hover:underline">docs/TESTFLIGHT-BETA.md</a>
+          <span class="text-neutral-500"> — invite-only TestFlight tester isolation</span>
+        </li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="border-t border-neutral-800/60 px-6 py-8 mt-12">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-neutral-600 text-xs">
+      <span>© 2026 health4.ai · Not a medical device</span>
+      <div class="flex gap-6">
+        <a href="/setup" class="hover:text-neutral-400 transition-colors">Setup</a>
+        <a href="/privacy" class="hover:text-neutral-400 transition-colors">Privacy</a>
+        <a href="/terms" class="hover:text-neutral-400 transition-colors">Terms</a>
+        <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="hover:text-neutral-400 transition-colors">GitHub →</a>
+      </div>
+    </div>
+  </footer>
+</Layout>

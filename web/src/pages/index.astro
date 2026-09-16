@@ -1,4 +1,3 @@
----
 import Layout from '../layouts/Layout.astro';
 import HomeHero from '../components/HomeHero.astro';
 import HomeDetails from '../components/HomeDetails.astro';
@@ -55,8 +54,8 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
     <div class="w-[600px] h-[300px] rounded-full opacity-[0.06]" style="background:radial-gradient(ellipse,#ff2d78 0%,transparent 70%)"></div>
   </div>
   <div class="relative max-w-lg mx-auto">
-    <h2 class="text-3xl font-extrabold text-white tracking-tight mb-3">Get notified at launch</h2>
-    <p class="text-sm mb-8" style="color:var(--muted)">One email when it's on the App Store. No spam, ever.</p>
+    <h2 class="text-3xl font-extrabold text-white tracking-tight mb-3">Join the waitlist</h2>
+    <p class="text-sm mb-8" style="color:var(--muted)">Invite-only TestFlight today — check the consent box to request a beta invite. One email at App Store launch. No spam, ever. No public TestFlight link.</p>
     <form id="waitlist-form-2" class="wl-form max-w-md mx-auto">
       <input type="text" id="hp-2" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true" />
       <input type="email" id="email-input-2" placeholder="your@email.com" required
@@ -64,7 +63,7 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
         style="background:#0f1225;border:1px solid rgba(255,255,255,0.1)" />
       <label for="tf-consent-2" class="wl-consent flex items-start gap-2 -mx-2 px-2 py-1.5 rounded-lg cursor-pointer text-left text-xs leading-relaxed transition-colors active:bg-white/5" style="color:var(--muted)">
         <input type="checkbox" id="tf-consent-2" class="mt-0.5 shrink-0 accent-[var(--accent)]" style="width:16px;height:16px" />
-        <span>Also send me the TestFlight beta invite. Your email is <a href="/privacy#testflight" target="_blank" rel="noopener" class="underline hover:no-underline">shared with Apple<span class="sr-only"> (opens in a new tab)</span></a> to create the invitation.</span>
+        <span>Invite-only TestFlight — check this box to request a beta invite (no public link). Your email is <a href="/privacy#testflight" target="_blank" rel="noopener" class="underline hover:no-underline">shared with Apple<span class="sr-only"> (opens in a new tab)</span></a> to create the invitation.</span>
       </label>
       <button type="submit" class="wl-submit px-6 py-3 rounded-xl text-white font-bold text-sm cta-glow" style="background:var(--accent)">
         Notify me
@@ -82,6 +81,8 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
       <span>© 2026 health4.ai · Not a medical device</span>
     </div>
     <div class="flex gap-6">
+      <a href="/docs" class="hover:text-white transition-colors">Docs</a>
+      <a href="/setup" class="hover:text-white transition-colors">Setup</a>
       <a href="/privacy" class="hover:text-white transition-colors">Privacy</a>
       <a href="/terms" class="hover:text-white transition-colors">Terms</a>
       <a href="/schema.sql" class="hover:text-white transition-colors">schema.sql</a>
@@ -153,7 +154,7 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
   // BUMP THIS whenever the consent label copy changes. consent_source exists to
   // record WHAT a person agreed to; a version that silently goes stale defeats
   // the column. The copy it versions lives on the two <label> elements above.
-  const CONSENT_COPY_V = 'v2';
+  const CONSENT_COPY_V = 'v3';
 
   async function submitWaitlist(email, statusEl, formId, honeypotId, consentId) {
     // Honeypot: bots fill hidden fields, humans don't
