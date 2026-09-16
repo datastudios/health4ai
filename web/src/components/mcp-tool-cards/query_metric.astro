@@ -1,0 +1,26 @@
+        <!-- query_metric -->
+        <div class="border border-neutral-800 rounded-lg p-6 bg-neutral-900/40">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+            <code class="text-green-400 font-mono font-bold text-base">query_metric</code>
+            <span class="text-neutral-600 text-xs font-mono">Raw time series · any HKQuantityType</span>
+          </div>
+          <p class="text-amber-400 font-mono text-xs mb-3">
+            query_metric(metric_type: str, days: int) → [&#123;timestamp, value, unit&#125;]
+          </p>
+          <p class="text-neutral-400 text-sm mb-4">Raw time series for any HKQuantityType identifier. See identifier table below.</p>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
+              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Show me my VO2 max readings for the last 90 days"</div>
+            </div>
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
+  "timestamp": "2026-06-17T07:14:22Z",
+  "value": 48.3,
+  "unit": "mL/kg/min"
+}]`}</code></pre>
+            </div>
+          </div>
+        </div>
+
