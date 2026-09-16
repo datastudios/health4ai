@@ -1,16 +1,17 @@
----
 import Layout from '../layouts/Layout.astro';
 ---
 <Layout
   title="health4.ai MCP Tools Reference — Apple Health MCP Server"
-  description="Complete reference for the 8 MCP tools exposed by the health4.ai FastMCP server. Tool signatures, parameters, return shapes, and example Claude prompts."
+  description="Complete reference for the 11 MCP tools exposed by the health4.ai FastMCP server. Tool signatures, parameters, return shapes, and example Claude prompts."
 >
   <nav class="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
     <a href="/" class="text-green-400 font-bold text-lg tracking-tight hover:opacity-80 transition-opacity">health4.ai</a>
     <div class="flex gap-6 text-sm text-neutral-500">
-      <a href="/how-it-works" class="hover:text-neutral-300 transition-colors">How it works</a>
+      <a href="/docs" class="hover:text-neutral-300 transition-colors">Docs</a>
+      <a href="/setup" class="hover:text-neutral-300 transition-colors hidden sm:inline">Setup</a>
+      <a href="/how-it-works" class="hover:text-neutral-300 transition-colors hidden sm:inline">How it works</a>
       <a href="/compare" class="hover:text-neutral-300 transition-colors">Compare</a>
-      <a href="/blog" class="hover:text-neutral-300 transition-colors">Blog</a>
+      <a href="/blog" class="hover:text-neutral-300 transition-colors hidden sm:inline">Blog</a>
       <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="hover:text-neutral-300 transition-colors">GitHub →</a>
     </div>
   </nav>
@@ -28,22 +29,29 @@ import Layout from '../layouts/Layout.astro';
 
     <!-- Quick install -->
     <section class="mb-16">
-      <h2 class="text-white font-semibold text-sm mb-4 uppercase tracking-widest">Setup (3 steps)</h2>
+      <h2 class="text-white font-semibold text-sm mb-4 uppercase tracking-widest">Setup</h2>
+      <p class="text-neutral-400 text-sm leading-relaxed mb-4 max-w-2xl">
+        Full verified checklist (~15 min): <a href="/setup" class="text-green-400 hover:underline">/setup</a>.
+        Detail: <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" target="_blank" rel="noopener" class="text-green-400 hover:underline">docs/SETUP.md</a>.
+        Also listed on the <a href="https://glama.ai/mcp/servers" target="_blank" rel="noopener" class="text-green-400 hover:underline">Glama MCP registry</a>.
+        An npx one-liner is not published yet — clone + Python is the supported path.
+      </p>
       <div class="space-y-4 mb-6">
         <div class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">1</span>
           <div>
             <div class="text-white text-sm font-medium mb-1">Clone the MCP server</div>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>git clone https://github.com/jefflitt1/health4ai
-cd health4ai/mcp-server</code></pre>
+cd health4ai/mcp-server
+pip install -r requirements.txt</code></pre>
           </div>
         </div>
         <div class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">2</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Configure your Supabase credentials</div>
+            <div class="text-white text-sm font-medium mb-1">Configure .env</div>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>cp .env.example .env
-# Edit .env — add your Supabase URL, service role key, and user ID</code></pre>
+# DATABASE_URL + HEALTHKIT_USER_ID</code></pre>
           </div>
         </div>
         <div class="flex gap-4 items-start">
@@ -53,12 +61,16 @@ cd health4ai/mcp-server</code></pre>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 overflow-x-auto text-xs leading-relaxed text-neutral-300"><code>{`{
   "mcpServers": {
     "health4ai": {
-      "command": "python3",
-      "args": ["/path/to/health4ai/mcp-server/main.py"]
+      "command": "python",
+      "args": ["/path/to/health4ai/mcp-server/main.py"],
+      "env": {
+        "DATABASE_URL": "postgresql://...",
+        "HEALTHKIT_USER_ID": "<your auth UID>"
+      }
     }
   }
 }`}</code></pre>
-            <p class="text-neutral-500 text-xs mt-2">Works with Claude Desktop, Cursor, Continue, and any MCP-compatible client. Full setup guide in the <a href="https://github.com/jefflitt1/health4ai" class="text-green-400 hover:underline">README</a>.</p>
+            <p class="text-neutral-500 text-xs mt-2">Works with Claude Desktop, Cursor, Continue, and any MCP-compatible client. See <a href="/setup" class="text-green-400 hover:underline">/setup</a>.</p>
           </div>
         </div>
       </div>
@@ -80,22 +92,6 @@ cd health4ai/mcp-server</code></pre>
             get_health_summary(days: int) → &#123;steps, hrv_sdnn_ms, resting_heart_rate_bpm, sleep_hours, workout_count&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">Overview of key metrics across a date range.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What's my health summary for the last 7 days?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "steps": 8432,
-  "hrv_sdnn_ms": 52.1,
-  "resting_heart_rate_bpm": 58,
-  "sleep_hours": 7.3,
-  "workout_count": 4
-}`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_sleep -->
@@ -108,24 +104,6 @@ cd health4ai/mcp-server</code></pre>
             get_sleep(days: int) → [&#123;date, duration_hours, rem_hours, core_hours, deep_hours, awake_hours, efficiency_pct&#125;]
           </p>
           <p class="text-neutral-400 text-sm mb-4">Per-night sleep stage breakdown.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"How was my sleep last week?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "date": "2026-06-17",
-  "duration_hours": 7.5,
-  "rem_hours": 1.8,
-  "core_hours": 4.2,
-  "deep_hours": 1.1,
-  "awake_hours": 0.4,
-  "efficiency_pct": 94.7
-}]`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_hrv_trend -->
@@ -138,22 +116,6 @@ cd health4ai/mcp-server</code></pre>
             get_hrv_trend(days: int) → &#123;daily: [&#123;date, hrv_sdnn_ms&#125;], trend_vs_prior_week_pct&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">Daily HRV (SDNN) with trend delta vs prior period.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Is my HRV improving?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "daily": [
-    {"date": "2026-06-17", "hrv_sdnn_ms": 54.2},
-    {"date": "2026-06-16", "hrv_sdnn_ms": 49.8}
-  ],
-  "trend_vs_prior_week_pct": 6.3
-}`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_daily_snapshot -->
@@ -166,23 +128,6 @@ cd health4ai/mcp-server</code></pre>
             get_daily_snapshot(date: str) → &#123;date, ...all metrics recorded that day&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">All HealthKit samples recorded for a specific date.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What does my health data look like for June 15?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "date": "2026-06-15",
-  "steps": 9241,
-  "hrv_sdnn_ms": 51.4,
-  "resting_hr_bpm": 57,
-  "sleep_hours": 7.8,
-  "active_calories": 612
-}`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_workouts -->
@@ -195,22 +140,6 @@ cd health4ai/mcp-server</code></pre>
             get_workouts(days: int) → [&#123;date, type, duration_min, distance_km, active_calories&#125;]
           </p>
           <p class="text-neutral-400 text-sm mb-4">Workout log with type and intensity metrics.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"How many workouts did I do this month?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "date": "2026-06-17",
-  "type": "Running",
-  "duration_min": 42,
-  "distance_km": 6.8,
-  "active_calories": 487
-}]`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- query_metric -->
@@ -223,20 +152,6 @@ cd health4ai/mcp-server</code></pre>
             query_metric(metric_type: str, days: int) → [&#123;timestamp, value, unit&#125;]
           </p>
           <p class="text-neutral-400 text-sm mb-4">Raw time series for any HKQuantityType identifier. See identifier table below.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Show me my VO2 max readings for the last 90 days"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "timestamp": "2026-06-17T07:14:22Z",
-  "value": 48.3,
-  "unit": "mL/kg/min"
-}]`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_long_term_trend -->
@@ -251,20 +166,6 @@ cd health4ai/mcp-server</code></pre>
           <p class="text-neutral-400 text-sm mb-4">
             Multi-year monthly aggregates. Automatically uses the summary data tier beyond 30 days for query efficiency.
           </p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What's my HRV trend for the last 2 years?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "month": "2026-06",
-  "avg_value": 51.8,
-  "sample_count": 17
-}]`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_coaching_brief -->
@@ -277,21 +178,6 @@ cd health4ai/mcp-server</code></pre>
             get_coaching_brief() → &#123;recovery_score, sleep_quality, training_load, recommendation&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">Structured coaching context for AI agents. Suitable as a system prompt prefix or daily brief.</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Give me a training readiness brief"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "recovery_score": 78,
-  "sleep_quality": "good",
-  "training_load": "moderate",
-  "recommendation": "Ready for intensity. HRV elevated vs baseline."
-}`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- search_records -->
@@ -304,17 +190,6 @@ cd health4ai/mcp-server</code></pre>
             search_records(metric_type: str, threshold: float, operator: str, days: int) → [&#123;date, value&#125;]
           </p>
           <p class="text-neutral-400 text-sm mb-4">Filter records by threshold. Answers "worst HRV days", "nights under 6h", "days over 10k steps".</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What were my worst HRV days this year?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{"date": "2026-03-12", "value": 28.4},
- {"date": "2026-01-08", "value": 31.2}]`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- get_metric_stats -->
@@ -327,20 +202,6 @@ cd health4ai/mcp-server</code></pre>
             get_metric_stats(metric_type: str, days: int) → &#123;mean, median, p10, p90, std_dev&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">Your personal baseline and percentiles. Answers "is 42ms HRV good for me?"</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Is my HRV today above or below my normal range?"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "mean": 52.1, "median": 51.4,
-  "p10": 38.2,  "p90": 67.8,
-  "std_dev": 9.3
-}`}</code></pre>
-            </div>
-          </div>
         </div>
 
         <!-- compare_periods -->
@@ -353,21 +214,6 @@ cd health4ai/mcp-server</code></pre>
             compare_periods(metric_type: str, period_a_start: str, period_a_end: str, period_b_start: str, period_b_end: str) → &#123;period_a, period_b, delta_pct, verdict&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">Compare two date ranges with a plain-language verdict. Answers "did my sleep improve after I started lifting?"</p>
-          <div class="grid sm:grid-cols-2 gap-4">
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Compare my sleep before and after I started taking magnesium"</div>
-            </div>
-            <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "period_a": {"avg": 6.8, "label": "before"},
-  "period_b": {"avg": 7.4, "label": "after"},
-  "delta_pct": 8.8,
-  "verdict": "Improved"
-}`}</code></pre>
-            </div>
-          </div>
         </div>
 
       </div>
@@ -427,10 +273,10 @@ cd health4ai/mcp-server</code></pre>
       <div class="text-green-500 text-xs font-mono mb-3 tracking-widest uppercase">Early Access</div>
       <h2 class="text-white font-bold text-xl mb-3">Connect your Apple Health data to Claude</h2>
       <p class="text-neutral-400 text-sm mb-6 max-w-md mx-auto">
-        Join the waitlist and get notified at App Store launch.
+        Invite-only TestFlight — join the waitlist and request a beta invite. No public TestFlight link.
       </p>
       <a
-        href="/"
+        href="/#waitlist"
         class="inline-block bg-green-600 hover:bg-green-500 text-white text-sm font-semibold px-6 py-3 rounded-lg transition-colors"
       >
         Join the waitlist
@@ -443,6 +289,8 @@ cd health4ai/mcp-server</code></pre>
     <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-neutral-600 text-xs">
       <span>© 2026 health4.ai · Not a medical device</span>
       <div class="flex gap-6">
+        <a href="/docs" class="hover:text-neutral-400 transition-colors">Docs</a>
+        <a href="/setup" class="hover:text-neutral-400 transition-colors">Setup</a>
         <a href="/privacy" class="hover:text-neutral-400 transition-colors">Privacy</a>
         <a href="/terms" class="hover:text-neutral-400 transition-colors">Terms</a>
         <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="hover:text-neutral-400 transition-colors">GitHub →</a>
