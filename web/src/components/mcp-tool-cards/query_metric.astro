@@ -5,22 +5,33 @@
             <span class="text-neutral-600 text-xs font-mono">Raw time series · any HKQuantityType</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            query_metric(metric_type: str, days: int) → [&#123;timestamp, value, unit&#125;]
+            query_metric(metric_type: str, days: int = 7, limit: int = 200) → &#123;granularity, count, avg, samples|daily, …&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Raw time series for any HKQuantityType identifier. See identifier table below.</p>
+          <p class="text-neutral-400 text-sm mb-4">Time series for any HKQuantityType. ≤30 days returns raw samples; longer windows return daily aggregates. Empty results may include data_status.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
               <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Show me my VO2 max readings for the last 90 days"</div>
             </div>
             <div>
-              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "timestamp": "2026-06-17T07:14:22Z",
-  "value": 48.3,
-  "unit": "mL/kg/min"
-}]`}</code></pre>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape (raw, ≤30d)</div>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "metric_type": "HKQuantityTypeIdentifierVO2Max",
+  "period_days": 7,
+  "granularity": "raw",
+  "count": 2,
+  "avg": 48.3,
+  "min": 47.9,
+  "max": 48.7,
+  "samples": [{
+    "value": 48.3,
+    "unit": "mL/kg·min",
+    "started_at": "2026-06-17T07:14:22+00:00",
+    "ended_at": null,
+    "source": "Apple Watch",
+    "metadata": null
+  }]
+}`}</code></pre>
             </div>
           </div>
         </div>
-

@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">All metrics · single date</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_daily_snapshot(date: str) → &#123;date, ...all metrics recorded that day&#125;
+            get_daily_snapshot(date: str = "") → &#123;date, highlights, workouts, sleep_records, all_metrics, …&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">All HealthKit samples recorded for a specific date.</p>
+          <p class="text-neutral-400 text-sm mb-4">Everything recorded for a specific date (YYYY-MM-DD). Defaults to today. Highlights fall back to daily summaries past 30 days.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -17,13 +17,21 @@
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
               <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
   "date": "2026-06-15",
-  "steps": 9241,
-  "hrv_sdnn_ms": 51.4,
-  "resting_hr_bpm": 57,
-  "sleep_hours": 7.8,
-  "active_calories": 612
+  "total_records": 186,
+  "truncated": false,
+  "metrics_present": ["HKQuantityTypeIdentifierStepCount", "..."],
+  "highlights": {
+    "steps": 9241,
+    "active_energy_cal": 612,
+    "resting_hr_bpm": 57,
+    "hrv_sdnn_ms": 51.4,
+    "weight_kg": 78.2
+  },
+  "highlights_source": "raw",
+  "workouts": [{"type": "Running", "duration_minutes": 42.0, "calories": 487}],
+  "sleep_records": 12,
+  "all_metrics": {"HKQuantityTypeIdentifierStepCount": [{"value": 120, "unit": "count", "at": "..."}]}
 }`}</code></pre>
             </div>
           </div>
         </div>
-

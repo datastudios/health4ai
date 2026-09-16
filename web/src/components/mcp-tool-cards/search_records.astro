@@ -5,19 +5,29 @@
             <span class="text-neutral-600 text-xs font-mono">Threshold filtering · worst/best days</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            search_records(metric_type: str, threshold: float, operator: str, days: int) → [&#123;date, value&#125;]
+            search_records(metric_type: str, days: int = 90, min_value: float | None = None, max_value: float | None = None, limit: int = 100) → &#123;results: [&#123;date, value, source&#125;], filters, …&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Filter records by threshold. Answers "worst HRV days", "nights under 6h", "days over 10k steps".</p>
+          <p class="text-neutral-400 text-sm mb-4">Find days where a metric crossed a threshold. Cumulative metrics filter on daily total; rate metrics on daily average. Results sorted highest-to-lowest.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
-              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What were my worst HRV days this year?"</div>
+              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What were my worst HRV days this year?" → max_value=40</div>
             </div>
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{"date": "2026-03-12", "value": 28.4},
- {"date": "2026-01-08", "value": 31.2}]`}</code></pre>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "metric_type": "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+  "period_days": 90,
+  "days_searched": 87,
+  "days_matched": 2,
+  "filters": {"min_value": null, "max_value": 40},
+  "value_type": "daily_avg",
+  "unit": "ms",
+  "results": [
+    {"date": "2026-03-12", "value": 28.4, "source": "raw"},
+    {"date": "2026-01-08", "value": 31.2, "source": "summary"}
+  ]
+}`}</code></pre>
             </div>
           </div>
         </div>
-

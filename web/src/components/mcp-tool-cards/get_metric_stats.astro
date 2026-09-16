@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">Personal baseline · percentiles</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_metric_stats(metric_type: str, days: int) → &#123;mean, median, p10, p90, std_dev&#125;
+            get_metric_stats(metric_type: str, days: int = 90) → &#123;mean, std_dev, percentiles, thresholds, …&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Your personal baseline and percentiles. Answers "is 42ms HRV good for me?"</p>
+          <p class="text-neutral-400 text-sm mb-4">Personal baseline and percentiles. thresholds.good_day_above = p75; poor_day_below = p25. Answers "is 42ms HRV good for me?"</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -16,11 +16,18 @@
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
               <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "mean": 52.1, "median": 51.4,
-  "p10": 38.2,  "p90": 67.8,
-  "std_dev": 9.3
+  "metric_type": "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+  "period_days": 90,
+  "data_points": 84,
+  "value_type": "daily_avg",
+  "unit": "ms",
+  "min": 28.4,
+  "max": 78.1,
+  "mean": 52.1,
+  "std_dev": 9.3,
+  "percentiles": {"p10": 38.2, "p25": 44.0, "p50": 51.4, "p75": 59.1, "p90": 67.8},
+  "thresholds": {"good_day_above": 59.1, "poor_day_below": 44.0}
 }`}</code></pre>
             </div>
           </div>
         </div>
-

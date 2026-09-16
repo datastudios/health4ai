@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">HRV · trend delta</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_hrv_trend(days: int) → &#123;daily: [&#123;date, hrv_sdnn_ms&#125;], trend_vs_prior_week_pct&#125;
+            get_hrv_trend(days: int = 30) → &#123;avg_hrv_ms, latest_hrv_ms, trend_vs_prior_week, daily_averages&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Daily HRV (SDNN) with trend delta vs prior period.</p>
+          <p class="text-neutral-400 text-sm mb-4">Daily HRV (SDNN) averages with 7-day vs prior-week delta and direction.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -16,13 +16,17 @@
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
               <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "daily": [
-    {"date": "2026-06-17", "hrv_sdnn_ms": 54.2},
-    {"date": "2026-06-16", "hrv_sdnn_ms": 49.8}
-  ],
-  "trend_vs_prior_week_pct": 6.3
+  "period_days": 30,
+  "days_with_data": 28,
+  "avg_hrv_ms": 52.1,
+  "latest_hrv_ms": 54.2,
+  "trend_vs_prior_week": {"delta_ms": 3.2, "direction": "improving"},
+  "unit": "ms",
+  "daily_averages": [
+    {"date": "2026-06-17", "avg_hrv_ms": 54.2, "source": "raw"},
+    {"date": "2026-06-16", "avg_hrv_ms": 49.8, "source": "raw"}
+  ]
 }`}</code></pre>
             </div>
           </div>
         </div>
-

@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">Overview · key metrics</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_health_summary(days: int) → &#123;steps, hrv_sdnn_ms, resting_heart_rate_bpm, sleep_hours, workout_count&#125;
+            get_health_summary(days: int = 7) → &#123;period_days, steps, hrv_sdnn_ms, resting_heart_rate_bpm, sleep, workouts, data_as_of&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Overview of key metrics across a date range.</p>
+          <p class="text-neutral-400 text-sm mb-4">Overview of key metrics across a date range. Nested objects for steps/HRV/RHR; sleep and workouts stay raw-only.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -16,13 +16,14 @@
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
               <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "steps": 8432,
-  "hrv_sdnn_ms": 52.1,
-  "resting_heart_rate_bpm": 58,
-  "sleep_hours": 7.3,
-  "workout_count": 4
+  "period_days": 7,
+  "steps": {"total": 59024, "daily_avg": 8432, "days_with_data": 7, "unit": "count"},
+  "hrv_sdnn_ms": {"avg": 52.1, "latest": 54.2, "readings": 14},
+  "resting_heart_rate_bpm": {"avg": 58.0, "latest": 57.0},
+  "sleep": {"total_records": 42, "stage_records": 28},
+  "workouts": {"count": 4, "types": ["Running", "TraditionalStrengthTraining"]},
+  "data_as_of": "2026-09-16T23:00:00+00:00"
 }`}</code></pre>
             </div>
           </div>
         </div>
-
