@@ -45,6 +45,22 @@ test('both waitlists retain explicit Apple consent and functional wiring', () =>
   assert.ok(!page.includes('tab-neon') && !page.includes('tab-local'), 'Neon / local Docker setup panels must not return');
 });
 
+function waitlistScript() {
+  const script = [...html('').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
+    .map((match) => match[1]).find((source) => source.includes('async function submitWaitlist'));
+  assert.ok(script, 'Actual emitted form script exists');
+  return script;
+}
+
+function consentCopyVersion(script) {
+  // Keep this aligned with CONSENT_COPY_V in index.astro (bumped when consent label copy changes).
+  const fromConst = script.match(/CONSENT_COPY_V\s*=\s*['"]([^'"]+)['"]/)?.[1];
+  const fromTemplate = script.match(/consent_source:\s*`web:\$\{formId\}:([^`]+)`/)?.[1];
+  const version = fromConst || fromTemplate;
+  assert.ok(version, 'Emitted waitlist script must declare a consent_source version');
+  return version;
+}
+
 function waitlistFixture(status = 201) {
   const elements = new Map();
   const requests = [];
@@ -63,9 +79,7 @@ function waitlistFixture(status = 201) {
       form: elements.get(`waitlist-form${i === 1 ? '' : '-2'}`),
     });
   }
-  const script = [...html('').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)]
-    .map((match) => match[1]).find((source) => source.includes('async function submitWaitlist'));
-  assert.ok(script, 'Actual emitted form script exists');
+  const script = waitlistScript();
   vm.runInNewContext(script, {
     document: { getElementById: (id) => elements.get(id) },
     window: { posthog: { capture: (...args) => captured.push(args) } },
@@ -74,7 +88,7 @@ function waitlistFixture(status = 201) {
       return { ok: status === 201, status };
     },
   });
-  return { elements, requests, captured };
+  return { elements, requests, captured, consentVersion: consentCopyVersion(script) };
 }
 
 for (const [suffix, consentId, name] of [['', 'tf-consent-1', 'hero'], ['-2', 'tf-consent-2', 'bottom']]) {
@@ -84,7 +98,7 @@ for (const [suffix, consentId, name] of [['', 'tf-consent-1', 'hero'], ['-2', 't
     await fixture.elements.get(`waitlist-form${suffix}`).handlers.submit({ preventDefault() {} });
     assert.equal(fixture.requests.length, 1);
     assert.equal(fixture.requests[0].body.consent_testflight, name === 'bottom');
-    assert.equal(fixture.requests[0].body.consent_source, `web:${name}:v2`);
+    assert.equal(fixture.requests[0].body.consent_source, `web:${name}:${fixture.consentVersion}`);
     assert.equal(fixture.elements.get(`form-status${suffix}`).textContent, "Received — we'll be in touch.");
     assert.equal(fixture.captured[0][0], 'waitlist_signup');
   });
