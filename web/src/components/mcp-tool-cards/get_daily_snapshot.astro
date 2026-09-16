@@ -1,0 +1,29 @@
+        <!-- get_daily_snapshot -->
+        <div class="border border-neutral-800 rounded-lg p-6 bg-neutral-900/40">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+            <code class="text-green-400 font-mono font-bold text-base">get_daily_snapshot</code>
+            <span class="text-neutral-600 text-xs font-mono">All metrics · single date</span>
+          </div>
+          <p class="text-amber-400 font-mono text-xs mb-3">
+            get_daily_snapshot(date: str) → &#123;date, ...all metrics recorded that day&#125;
+          </p>
+          <p class="text-neutral-400 text-sm mb-4">All HealthKit samples recorded for a specific date.</p>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
+              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"What does my health data look like for June 15?"</div>
+            </div>
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "date": "2026-06-15",
+  "steps": 9241,
+  "hrv_sdnn_ms": 51.4,
+  "resting_hr_bpm": 57,
+  "sleep_hours": 7.8,
+  "active_calories": 612
+}`}</code></pre>
+            </div>
+          </div>
+        </div>
+

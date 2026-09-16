@@ -1,0 +1,30 @@
+        <!-- get_sleep -->
+        <div class="border border-neutral-800 rounded-lg p-6 bg-neutral-900/40">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+            <code class="text-green-400 font-mono font-bold text-base">get_sleep</code>
+            <span class="text-neutral-600 text-xs font-mono">Sleep stages · per night</span>
+          </div>
+          <p class="text-amber-400 font-mono text-xs mb-3">
+            get_sleep(days: int) → [&#123;date, duration_hours, rem_hours, core_hours, deep_hours, awake_hours, efficiency_pct&#125;]
+          </p>
+          <p class="text-neutral-400 text-sm mb-4">Per-night sleep stage breakdown.</p>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
+              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"How was my sleep last week?"</div>
+            </div>
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
+  "date": "2026-06-17",
+  "duration_hours": 7.5,
+  "rem_hours": 1.8,
+  "core_hours": 4.2,
+  "deep_hours": 1.1,
+  "awake_hours": 0.4,
+  "efficiency_pct": 94.7
+}]`}</code></pre>
+            </div>
+          </div>
+        </div>
+
