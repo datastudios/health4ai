@@ -1,3 +1,189 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import Card_get_health_summary from '../components/mcp-tool-cards/get_health_summary.astro';
+import Card_get_sleep from '../components/mcp-tool-cards/get_sleep.astro';
+import Card_get_hrv_trend from '../components/mcp-tool-cards/get_hrv_trend.astro';
+import Card_get_daily_snapshot from '../components/mcp-tool-cards/get_daily_snapshot.astro';
+import Card_get_workouts from '../components/mcp-tool-cards/get_workouts.astro';
+import Card_query_metric from '../components/mcp-tool-cards/query_metric.astro';
+import Card_get_long_term_trend from '../components/mcp-tool-cards/get_long_term_trend.astro';
+import Card_get_coaching_brief from '../components/mcp-tool-cards/get_coaching_brief.astro';
+import Card_search_records from '../components/mcp-tool-cards/search_records.astro';
+import Card_get_metric_stats from '../components/mcp-tool-cards/get_metric_stats.astro';
+import Card_compare_periods from '../components/mcp-tool-cards/compare_periods.astro';
 ---
+<Layout
+  title="health4.ai MCP Tools Reference — Apple Health MCP Server"
+  description="Complete reference for the 11 MCP tools exposed by the health4.ai FastMCP server. Tool signatures, parameters, return shapes, and example Claude prompts."
+>
+  <nav class="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
+    <a href="/" class="text-green-400 font-bold text-lg tracking-tight hover:opacity-80 transition-opacity">health4.ai</a>
+    <div class="flex gap-6 text-sm text-neutral-500">
+      <a href="/docs" class="hover:text-neutral-300 transition-colors">Docs</a>
+      <a href="/setup" class="hover:text-neutral-300 transition-colors hidden sm:inline">Setup</a>
+      <a href="/how-it-works" class="hover:text-neutral-300 transition-colors hidden sm:inline">How it works</a>
+      <a href="/compare" class="hover:text-neutral-300 transition-colors">Compare</a>
+      <a href="/blog" class="hover:text-neutral-300 transition-colors hidden sm:inline">Blog</a>
+      <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="hover:text-neutral-300 transition-colors">GitHub →</a>
+    </div>
+  </nav>
+
+  <main class="px-6 py-12 max-w-5xl mx-auto">
+
+    <!-- Hero -->
+    <div class="mb-14">
+      <div class="text-green-500 text-xs font-mono mb-3 tracking-widest uppercase">MCP Server Reference</div>
+      <h1 class="text-3xl font-bold text-white mb-4">MCP Tools Reference</h1>
+      <p class="text-neutral-400 text-sm leading-relaxed max-w-2xl">
+        Once you install the iOS app and sync your HealthKit data, these are the 11 MCP tools your AI can call. The server is open source — clone the repo, drop in your Supabase credentials, and add one config block to your AI client.
+      </p>
+    </div>
+
+    <!-- Quick install -->
+    <section class="mb-16">
+      <h2 class="text-white font-semibold text-sm mb-4 uppercase tracking-widest">Setup</h2>
+      <p class="text-neutral-400 text-sm leading-relaxed mb-4 max-w-2xl">
+        Full verified checklist (~15 min): <a href="/setup" class="text-green-400 hover:underline">/setup</a>.
+        Detail: <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" target="_blank" rel="noopener" class="text-green-400 hover:underline">docs/SETUP.md</a>.
+        Also listed on the <a href="https://glama.ai/mcp/servers" target="_blank" rel="noopener" class="text-green-400 hover:underline">Glama MCP registry</a>.
+        An npx one-liner is not published yet — clone + Python is the supported path.
+      </p>
+      <div class="space-y-4 mb-6">
+        <div class="flex gap-4 items-start">
+          <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">1</span>
+          <div>
+            <div class="text-white text-sm font-medium mb-1">Clone the MCP server</div>
+            <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>git clone https://github.com/jefflitt1/health4ai
+cd health4ai/mcp-server
+pip install -r requirements.txt</code></pre>
+          </div>
+        </div>
+        <div class="flex gap-4 items-start">
+          <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">2</span>
+          <div>
+            <div class="text-white text-sm font-medium mb-1">Configure .env</div>
+            <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>cp .env.example .env
+# DATABASE_URL + HEALTHKIT_USER_ID</code></pre>
+          </div>
+        </div>
+        <div class="flex gap-4 items-start">
+          <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">3</span>
+          <div>
+            <div class="text-white text-sm font-medium mb-1">Add to your AI client</div>
+            <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-5 overflow-x-auto text-xs leading-relaxed text-neutral-300"><code>{`{
+  "mcpServers": {
+    "health4ai": {
+      "command": "python",
+      "args": ["/path/to/health4ai/mcp-server/main.py"],
+      "env": {
+        "DATABASE_URL": "postgresql://...",
+        "HEALTHKIT_USER_ID": "<your auth UID>"
+      }
+    }
+  }
+}`}</code></pre>
+            <p class="text-neutral-500 text-xs mt-2">Works with Claude Desktop, Cursor, Continue, and any MCP-compatible client. See <a href="/setup" class="text-green-400 hover:underline">/setup</a>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tool cards -->
+    <section class="mb-16">
+      <h2 class="text-white font-semibold text-sm mb-8 uppercase tracking-widest">11 Tools</h2>
+
+      <div class="space-y-6">
+
+        <Card_get_health_summary />
+        <Card_get_sleep />
+        <Card_get_hrv_trend />
+        <Card_get_daily_snapshot />
+        <Card_get_workouts />
+        <Card_query_metric />
+        <Card_get_long_term_trend />
+        <Card_get_coaching_brief />
+        <Card_search_records />
+        <Card_get_metric_stats />
+        <Card_compare_periods />
+      </div>
+    </section>
+
+    <!-- HKQuantityType identifier table -->
+    <section class="mb-16">
+      <h2 class="text-white font-semibold text-sm mb-2 uppercase tracking-widest">HKQuantityType Identifiers</h2>
+      <p class="text-neutral-500 text-xs mb-6">
+        Pass these strings as <code class="text-amber-400">metric_type</code> to
+        <code class="text-green-400">query_metric</code> or <code class="text-green-400">get_long_term_trend</code>.
+      </p>
+      <div class="border border-neutral-800 rounded-lg overflow-hidden">
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="border-b border-neutral-800 bg-neutral-900">
+              <th class="text-left px-4 py-3 text-neutral-500 font-normal uppercase tracking-wider">Identifier</th>
+              <th class="text-left px-4 py-3 text-neutral-500 font-normal uppercase tracking-wider">Metric</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-neutral-800/60">
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierHeartRateVariabilitySDNN</td>
+              <td class="px-4 py-3 text-neutral-400">HRV</td>
+            </tr>
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierRestingHeartRate</td>
+              <td class="px-4 py-3 text-neutral-400">Resting HR</td>
+            </tr>
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierVO2Max</td>
+              <td class="px-4 py-3 text-neutral-400">VO2 max</td>
+            </tr>
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierStepCount</td>
+              <td class="px-4 py-3 text-neutral-400">Steps</td>
+            </tr>
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierActiveEnergyBurned</td>
+              <td class="px-4 py-3 text-neutral-400">Active calories</td>
+            </tr>
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierBodyMass</td>
+              <td class="px-4 py-3 text-neutral-400">Weight</td>
+            </tr>
+            <tr class="hover:bg-neutral-900/40 transition-colors">
+              <td class="px-4 py-3 font-mono text-amber-400 text-xs">HKQuantityTypeIdentifierOxygenSaturation</td>
+              <td class="px-4 py-3 text-neutral-400">Blood oxygen</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Footer CTA -->
+    <section class="border border-neutral-800 rounded-lg p-8 text-center bg-neutral-900/30">
+      <div class="text-green-500 text-xs font-mono mb-3 tracking-widest uppercase">Early Access</div>
+      <h2 class="text-white font-bold text-xl mb-3">Connect your Apple Health data to Claude</h2>
+      <p class="text-neutral-400 text-sm mb-6 max-w-md mx-auto">
+        Invite-only TestFlight — join the waitlist and request a beta invite. No public TestFlight link.
+      </p>
+      <a
+        href="/#waitlist"
+        class="inline-block bg-green-600 hover:bg-green-500 text-white text-sm font-semibold px-6 py-3 rounded-lg transition-colors"
+      >
+        Join the waitlist
+      </a>
+    </section>
+
+  </main>
+
+  <footer class="border-t border-neutral-800/60 px-6 py-8 mt-12">
+    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-neutral-600 text-xs">
+      <span>© 2026 health4.ai · Not a medical device</span>
+      <div class="flex gap-6">
+        <a href="/docs" class="hover:text-neutral-400 transition-colors">Docs</a>
+        <a href="/setup" class="hover:text-neutral-400 transition-colors">Setup</a>
+        <a href="/privacy" class="hover:text-neutral-400 transition-colors">Privacy</a>
+        <a href="/terms" class="hover:text-neutral-400 transition-colors">Terms</a>
+        <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="hover:text-neutral-400 transition-colors">GitHub →</a>
+      </div>
+    </div>
+  </footer>
+</Layout>
