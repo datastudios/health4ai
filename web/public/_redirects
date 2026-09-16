@@ -1,0 +1,2 @@
+# Astro emits sitemap-index.xml (+ sitemap-0.xml). Send the common /sitemap.xml path there.
+/sitemap.xml /sitemap-index.xml 301
