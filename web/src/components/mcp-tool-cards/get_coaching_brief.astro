@@ -1,0 +1,27 @@
+        <!-- get_coaching_brief -->
+        <div class="border border-neutral-800 rounded-lg p-6 bg-neutral-900/40">
+          <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 mb-3">
+            <code class="text-green-400 font-mono font-bold text-base">get_coaching_brief</code>
+            <span class="text-neutral-600 text-xs font-mono">Structured context · AI agents</span>
+          </div>
+          <p class="text-amber-400 font-mono text-xs mb-3">
+            get_coaching_brief() → &#123;recovery_score, sleep_quality, training_load, recommendation&#125;
+          </p>
+          <p class="text-neutral-400 text-sm mb-4">Structured coaching context for AI agents. Suitable as a system prompt prefix or daily brief.</p>
+          <div class="grid sm:grid-cols-2 gap-4">
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
+              <div class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs italic">"Give me a training readiness brief"</div>
+            </div>
+            <div>
+              <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "recovery_score": 78,
+  "sleep_quality": "good",
+  "training_load": "moderate",
+  "recommendation": "Ready for intensity. HRV elevated vs baseline."
+}`}</code></pre>
+            </div>
+          </div>
+        </div>
+
