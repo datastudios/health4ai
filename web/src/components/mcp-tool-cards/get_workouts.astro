@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">Workout log · type &amp; intensity</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_workouts(days: int) → [&#123;date, type, duration_min, distance_km, active_calories&#125;]
+            get_workouts(days: int = 30, limit: int = 20) → &#123;total_workouts, by_type, workouts: [&#123;date, workout_type, duration_minutes, …&#125;]&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Workout log with type and intensity metrics.</p>
+          <p class="text-neutral-400 text-sm mb-4">Workout log with type, duration, distance, and calories.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -15,14 +15,21 @@
             </div>
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "date": "2026-06-17",
-  "type": "Running",
-  "duration_min": 42,
-  "distance_km": 6.8,
-  "active_calories": 487
-}]`}</code></pre>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "period_days": 30,
+  "total_workouts": 12,
+  "total_duration_hours": 8.4,
+  "by_type": {"Running": 7, "TraditionalStrengthTraining": 5},
+  "workouts": [{
+    "date": "2026-06-17",
+    "started_at": "2026-06-17T06:30:00+00:00",
+    "workout_type": "Running",
+    "duration_minutes": 42.0,
+    "distance_km": 6.8,
+    "calories_burned": 487,
+    "source": "Apple Watch"
+  }]
+}`}</code></pre>
             </div>
           </div>
         </div>
-
