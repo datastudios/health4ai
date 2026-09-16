@@ -5,10 +5,10 @@
             <span class="text-neutral-600 text-xs font-mono">Monthly aggregates · multi-year</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_long_term_trend(metric_type: str, months: int) → [&#123;month, avg_value, sample_count&#125;]
+            get_long_term_trend(metric_type: str, months: int = 24) → &#123;overall_avg, monthly_trend, daily_data, …&#125;
           </p>
           <p class="text-neutral-400 text-sm mb-4">
-            Multi-year monthly aggregates. Automatically uses the summary data tier beyond 30 days for query efficiency.
+            Multi-year monthly aggregates. Merges recent raw with historical daily summaries so the trend has no recency gap.
           </p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
@@ -17,12 +17,22 @@
             </div>
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
-              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`[{
-  "month": "2026-06",
-  "avg_value": 51.8,
-  "sample_count": 17
-}]`}</code></pre>
+              <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
+  "metric_type": "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+  "months_requested": 24,
+  "days_with_data": 612,
+  "overall_avg": 51.8,
+  "overall_min": 28.4,
+  "overall_max": 78.1,
+  "unit": "ms",
+  "monthly_trend": [{
+    "month": "2026-06",
+    "avg": 51.8,
+    "days_with_data": 17,
+    "sources": ["raw", "summary"]
+  }],
+  "daily_data": [{"date": "2026-06-17", "avg": 54.2, "min": 48.1, "max": 61.0, "count": 3, "source": "raw"}]
+}`}</code></pre>
             </div>
           </div>
         </div>
-

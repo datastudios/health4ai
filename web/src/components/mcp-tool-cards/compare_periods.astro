@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">Before/after · with verdict</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            compare_periods(metric_type: str, period_a_start: str, period_a_end: str, period_b_start: str, period_b_end: str) → &#123;period_a, period_b, delta_pct, verdict&#125;
+            compare_periods(metric_type: str, period_a_start: str, period_a_end: str, period_b_start: str, period_b_end: str, label_a: str = "Period A", label_b: str = "Period B") → &#123;label_a, label_b, comparison&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Compare two date ranges with a plain-language verdict. Answers "did my sleep improve after I started lifting?"</p>
+          <p class="text-neutral-400 text-sm mb-4">Compare two YYYY-MM-DD ranges. Period objects are keyed by label_a / label_b. Answers "did my sleep improve after I started lifting?"</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -16,12 +16,22 @@
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
               <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "period_a": {"avg": 6.8, "label": "before"},
-  "period_b": {"avg": 7.4, "label": "after"},
-  "delta_pct": 8.8,
-  "verdict": "Improved"
+  "metric_type": "HKCategoryTypeIdentifierSleepAnalysis",
+  "value_type": "daily_avg",
+  "before": {
+    "start": "2026-04-01", "end": "2026-04-14",
+    "data_points": 14, "avg": 6.8, "min": 5.1, "max": 8.2, "unit": "min"
+  },
+  "after": {
+    "start": "2026-04-15", "end": "2026-04-28",
+    "data_points": 14, "avg": 7.4, "min": 6.0, "max": 8.5, "unit": "min"
+  },
+  "comparison": {
+    "delta": 0.6,
+    "pct_change": 8.8,
+    "verdict": "after is higher than before"
+  }
 }`}</code></pre>
             </div>
           </div>
         </div>
-

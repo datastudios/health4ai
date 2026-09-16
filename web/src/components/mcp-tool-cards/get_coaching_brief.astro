@@ -5,9 +5,9 @@
             <span class="text-neutral-600 text-xs font-mono">Structured context · AI agents</span>
           </div>
           <p class="text-amber-400 font-mono text-xs mb-3">
-            get_coaching_brief() → &#123;recovery_score, sleep_quality, training_load, recommendation&#125;
+            get_coaching_brief() → &#123;data_status, recovery, sleep, training_load_30d, activity_7d, fitness_markers&#125;
           </p>
-          <p class="text-neutral-400 text-sm mb-4">Structured coaching context for AI agents. Suitable as a system prompt prefix or daily brief.</p>
+          <p class="text-neutral-400 text-sm mb-4">Structured coaching context for AI agents. Includes freshness status — do not cite numbers when data_status is stale/none.</p>
           <div class="grid sm:grid-cols-2 gap-4">
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Example prompt</div>
@@ -16,12 +16,21 @@
             <div>
               <div class="text-neutral-600 text-xs mb-1 uppercase tracking-wider">Return shape</div>
               <pre class="bg-neutral-950 border border-neutral-800/60 rounded px-3 py-2 text-neutral-300 text-xs overflow-x-auto"><code>{`{
-  "recovery_score": 78,
-  "sleep_quality": "good",
-  "training_load": "moderate",
-  "recommendation": "Ready for intensity. HRV elevated vs baseline."
+  "generated_at": "2026-09-16T23:00:00+00:00",
+  "data_status": {"status": "fresh", "hours_since_newest_sample": 3.2, "guidance": "..."},
+  "recovery": {
+    "hrv_latest_ms": 54.2,
+    "hrv_7d_avg_ms": 52.1,
+    "hrv_trend": "stable",
+    "hrv_delta_vs_prior_week_ms": 1.1,
+    "resting_hr_latest_bpm": 57,
+    "coaching_note": "Recovery stable"
+  },
+  "sleep": {"avg_hours_last_7_nights": 7.3, "nights_tracked": 7, "quality_flag": "borderline"},
+  "training_load_30d": {"total_workouts": 12, "total_hours": 8.4, "weekly_avg_workouts": 2.8, "by_type": {"Running": 7}},
+  "activity_7d": {"avg_daily_steps": 8432, "avg_active_energy_cal": 520},
+  "fitness_markers": {"vo2max_latest": 48.3, "weight_kg_latest": 78.2}
 }`}</code></pre>
             </div>
           </div>
         </div>
-
