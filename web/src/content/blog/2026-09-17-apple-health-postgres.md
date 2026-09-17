@@ -1,5 +1,5 @@
 ---
-title: "Apple Health to Postgres: The Own-DB Path to Claude and Cursor"
+title: "Apple Health → Postgres: The Own-DB Path to Claude and Cursor"
 description: "Why Apple Health + your own Postgres/Supabase is the durable path for MCP agents — HealthKit sync, schema, and how it differs from export-only stacks."
 pubDate: 2026-09-17
 slug: "apple-health-postgres"
@@ -7,11 +7,11 @@ tags: ["apple-health", "postgres", "supabase", "healthkit", "mcp", "own-db"]
 draft: false
 ---
 
-# Apple Health to Postgres: The Own-DB Path to Claude and Cursor
+# Apple Health → Postgres: The Own-DB Path to Claude and Cursor
 
 **Apple Health Postgres** is the search phrase people use when they already know the punchline: HealthKit on the phone is not enough. They want samples in a database they control so Claude, Cursor, or a local model can query years of history with SQL-backed MCP tools.
 
-That is the own-DB wedge. health4.ai implements it as **HealthKit to your Supabase/Postgres to local MCP**. This post is about *why* that path exists, what "Postgres" means in practice (spoiler: Supabase Auth + Edge Functions for the iOS app), and how it differs from Health Auto Export LAN MCP and neiltron-style export+npx stacks.
+That is the own-DB wedge. health4.ai implements it as **HealthKit → your Supabase/Postgres → local MCP**. This post is about *why* that path exists, what "Postgres" means in practice (spoiler: Supabase Auth + Edge Functions for the iOS app), and how it differs from Health Auto Export LAN MCP and neiltron-style export+npx stacks.
 
 Setup checklist: [/setup](/setup). Comparison matrix: [/compare](/compare). Schema and ops notes: [/docs](/docs). Tool reference: [/mcp-tools](/mcp-tools).
 
@@ -19,8 +19,8 @@ Setup checklist: [/setup](/setup). Comparison matrix: [/compare](/compare). Sche
 
 HealthKit is an on-device store. There is no Apple-hosted query API you can call from Claude Code on a laptop in another city. Every serious bridge does one of three things:
 
-1. Keep the query surface on the phone (local MCP / same-Wi-Fi TCP)
-2. Freeze a snapshot (XML/CSV export to file-backed MCP)
+1. Keep the query surface on the phone (local MCP / same-Wi‑Fi TCP)
+2. Freeze a snapshot (XML/CSV export → file-backed MCP)
 3. Mirror samples into a durable store you own (**apple health postgres** / **healthkit supabase**)
 
 Option 3 is what you want if agents should still work when your iPhone is not on the same network as your Mac, and if "last 90 days of HRV" should be a database query rather than another manual export.
@@ -78,7 +78,7 @@ This is also why own-DB beats a flat JSON snapshot for agent work: you can join,
 
 ## Contrast: Health Auto Export folk stack
 
-Health Auto Export's MCP flow is optimized around the phone as the live endpoint — often same-Wi-Fi TCP from Mac to iPhone. That is convenient when everything stays home.
+Health Auto Export's MCP flow is optimized around the phone as the live endpoint — often same-Wi‑Fi TCP from Mac → iPhone. That is convenient when everything stays home.
 
 Own-DB flips the dependency: the phone *writes* when HealthKit fires; the agent *reads* your database from anywhere with network access to Supabase. You trade "no cloud project to create" for "agents keep working on travel days."
 
@@ -96,9 +96,9 @@ health4.ai does not publish an npx package yet; the supported MCP install remain
 
 With MCP connected:
 
-- "Health summary for 14 days" to aggregates over your rows
-- "Compare this week's sleep to last month" to multi-tool or longer-window reads
-- "Show workouts with active energy over 500 kcal" to filtered history
+- "Health summary for 14 days" → aggregates over your rows
+- "Compare this week's sleep to last month" → multi-tool or longer-window reads
+- "Show workouts with active energy over 500 kcal" → filtered history
 - Direct SQL in the Supabase editor for one-off analysis the tools do not cover
 
 Example verification prompts after setup:
@@ -126,7 +126,7 @@ The point of the wedge is not a prettier chart. It is that Claude and Cursor bec
 
 ## When own-DB is the wrong choice
 
-Skip this path if you refuse to create a Supabase project, if you only need a one-time research snapshot, or if you already get reliable answers from a LAN MCP and never leave home Wi-Fi. Own-DB is operationally heavier than `npx` against an export — that cost buys continuity and remote agents.
+Skip this path if you refuse to create a Supabase project, if you only need a one-time research snapshot, or if you already get reliable answers from a LAN MCP and never leave home Wi‑Fi. Own-DB is operationally heavier than `npx` against an export — that cost buys continuity and remote agents.
 
 If you are still choosing among MCP architectures (LAN phone, export file, own-DB), start with [Apple Health MCP for Claude in 2026](/blog/apple-health-mcp-for-claude-2026), then come back here when you are ready to stand up Postgres.
 
