@@ -1,1 +1,181 @@
-PLACEHOLDER_USE_FILE
+---
+import Layout from '../layouts/Layout.astro';
+import HomeHero from '../components/HomeHero.astro';
+import HomeDetails from '../components/HomeDetails.astro';
+import BrandLogo from '../components/BrandLogo.astro';
+import WaitlistClient from '../components/WaitlistClient.astro';
+---
+
+<Layout>
+<style is:global>
+  .ecg-main   { stroke-dasharray: 950; stroke-dashoffset: 950; animation: ecg-draw 3.8s cubic-bezier(0.4,0,0.2,1) infinite; }
+  .ecg-glow   { stroke-dasharray: 950; stroke-dashoffset: 950; animation: ecg-draw 3.8s cubic-bezier(0.4,0,0.2,1) infinite; }
+  .ring-pulse { animation: ring-breathe 3.2s ease-in-out infinite; }
+  .peak-dot   { animation: peak-pulse 3.8s ease-in-out infinite; transform-origin: 156px 138px; }
+  .hp-field   { position:absolute; left:-9999px; top:-9999px; width:0; height:0; opacity:0; pointer-events:none; }
+  .peak-halo  { animation: peak-pulse 3.8s ease-in-out infinite; animation-delay: 90ms; transform-origin: 156px 138px; }
+  .card-a     { animation: float-up 4.8s ease-in-out infinite; }
+  .card-b     { animation: float-up 4.8s ease-in-out infinite; animation-delay: 2.2s; }
+  .cta-glow   { animation: glow-pulse 3s ease-in-out infinite; }
+  .code-block { background: #06070f; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 20px 24px; font-family: ui-monospace,'SF Mono',monospace; font-size: 0.8rem; line-height: 1.7; color: #c8d0e8; overflow-x: auto; white-space: pre; margin: 0; }
+  .code-block .cm  { color: #4a5580; }
+  .code-block .kw  { color: #ff6b9d; }
+  .code-block .str { color: #a8d8a0; }
+  .code-block .num { color: #ffc97a; }
+  /* Focus indicators — WCAG 2.1 2.4.7 */
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Waitlist forms. DOM order is email -> consent -> submit so that Tab and
+     Return-to-submit both reach consent before the control that commits it.
+     On sm+ the button is PAINTED back beside the field via explicit grid
+     placement; grid placement is visual only and leaves tab order alone. */
+  .wl-form { display: grid; gap: 12px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) {
+    .wl-form { grid-template-columns: 1fr auto; }
+    .wl-form .wl-email   { grid-column: 1; grid-row: 1; }
+    .wl-form .wl-submit  { grid-column: 2; grid-row: 1; }
+    .wl-form .wl-consent { grid-column: 1 / -1; grid-row: 2; }
+  }
+  .wl-form input:disabled, .wl-form button:disabled { opacity: .5; cursor: default; animation: none; }
+  .wl-next {
+    margin-top: 12px;
+    max-width: 28rem;
+    padding: 12px 14px;
+    border-radius: 12px;
+    text-align: left;
+    background: rgba(255,45,120,0.06);
+    border: 1px solid rgba(255,45,120,0.18);
+  }
+  .wl-next[hidden] { display: none; }
+  .wl-explore[hidden] { display: none; }
+  .wl-form:has(:disabled) .wl-consent { cursor: default; pointer-events: none; }
+  input[type="email"]:focus-visible { box-shadow: 0 0 0 2px var(--accent) !important; border-color: var(--accent) !important; }
+  @media (prefers-reduced-motion: reduce) {
+    .ecg-main, .ecg-glow, .ring-pulse, .peak-dot, .peak-halo,
+    .card-a, .card-b, .cta-glow, .animate-pulse { animation: none; }
+    .ecg-main, .ecg-glow { stroke-dashoffset: 0; }
+  }
+</style>
+
+<HomeHero />
+<HomeDetails />
+
+<!-- ── FOOTER CTA ──────────────────────────────────────────── -->
+<section id="waitlist" class="px-6 py-24 text-center relative overflow-hidden">
+  <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+    <div class="w-[600px] h-[300px] rounded-full opacity-[0.06]" style="background:radial-gradient(ellipse,#ff2d78 0%,transparent 70%)"></div>
+  </div>
+  <div class="relative max-w-lg mx-auto">
+    <h2 class="text-3xl font-extrabold text-white tracking-tight mb-3">Join the waitlist</h2>
+    <p class="text-sm mb-8" style="color:var(--muted)">Invite-only TestFlight today — check the consent box to request a beta invite. One email at App Store launch. No spam, ever. No public TestFlight link.</p>
+    <form id="waitlist-form-2" class="wl-form max-w-md mx-auto">
+      <input type="text" id="hp-2" name="website" class="hp-field" tabindex="-1" autocomplete="off" aria-hidden="true" />
+      <input type="email" id="email-input-2" placeholder="your@email.com" required
+        class="wl-email rounded-xl px-4 py-3 text-white text-sm outline-none"
+        style="background:#0f1225;border:1px solid rgba(255,255,255,0.1)" />
+      <label for="tf-consent-2" class="wl-consent flex items-start gap-2 -mx-2 px-2 py-1.5 rounded-lg cursor-pointer text-left text-xs leading-relaxed transition-colors active:bg-white/5" style="color:var(--muted)">
+        <input type="checkbox" id="tf-consent-2" class="mt-0.5 shrink-0 accent-[var(--accent)]" style="width:16px;height:16px" />
+        <span>Invite-only TestFlight — check this box to request a beta invite (no public link). Your email is <a href="/privacy#testflight" target="_blank" rel="noopener" class="underline hover:no-underline">shared with Apple<span class="sr-only"> (opens in a new tab)</span></a> to create the invitation.</span>
+      </label>
+      <button type="submit" class="wl-submit px-6 py-3 rounded-xl text-white font-bold text-sm cta-glow" style="background:var(--accent)">
+        Notify me
+      </button>
+    </form>
+    <p id="form-status-2" aria-live="polite" class="text-xs mt-3 min-h-[18px]" style="color:var(--muted)"></p>
+    <div id="waitlist-next-2" class="wl-next mx-auto" hidden>
+      <p class="wl-next-title text-xs font-semibold text-white mb-2">While you wait</p>
+      <ul class="space-y-1.5 text-xs leading-relaxed" style="color:var(--muted)">
+        <li><a href="/setup" class="underline hover:no-underline" style="color:var(--accent-light)">Read the ~15-minute setup checklist →</a></li>
+        <li><a href="/compare" class="underline hover:no-underline" style="color:var(--accent-light)">See Apple Health MCP positioning vs alternatives →</a></li>
+        <li><a href="/mcp-tools" class="underline hover:no-underline" style="color:var(--accent-light)">Browse MCP tools</a> · <a href="/docs" class="underline hover:no-underline" style="color:var(--accent-light)">Docs</a></li>
+      </ul>
+    </div>
+    <p class="wl-explore text-xs mt-4" style="color:var(--muted)">
+      Or explore now:
+      <a href="/setup" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Setup</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/compare" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Compare</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/docs" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Docs</a>
+    </p>
+  </div>
+</section>
+
+<!-- ── FOOTER ──────────────────────────────────────────────── -->
+<footer class="border-t px-6 py-8" style="border-color:rgba(255,255,255,0.06)">
+  <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs" style="color:#4a5580">
+    <div class="flex items-center gap-2">
+      <BrandLogo size={20} alt="" class="w-5 h-5 rounded-md opacity-60" />
+      <span>© 2026 health4.ai · Not a medical device</span>
+    </div>
+    <div class="flex gap-6">
+      <a href="/docs" class="hover:text-white transition-colors">Docs</a>
+      <a href="/setup" class="hover:text-white transition-colors">Setup</a>
+      <a href="/compare" class="hover:text-white transition-colors">Compare</a>
+      <a href="/privacy" class="hover:text-white transition-colors">Privacy</a>
+      <a href="/terms" class="hover:text-white transition-colors">Terms</a>
+      <a href="/schema.sql" class="hover:text-white transition-colors">schema.sql</a>
+      <a href="https://github.com/jefflitt1/health4ai" target="_blank" rel="noopener" class="hover:text-white transition-colors">GitHub →</a>
+    </div>
+  </div>
+</footer>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is the best way to get Apple Health data into Claude Code?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "health4ai is an open-source iOS app and MCP server that syncs HealthKit data to a Supabase project you own and exposes it to Claude Code, Cursor, and Ollama as native tool calls. It uses HKObserverQuery for reliable background sync."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does Claude's native Apple Health integration work with Claude Code?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Anthropic's Apple Health connector is a claude.ai web feature only. It does not reach Claude Code, the API, n8n, or any MCP client outside the browser. health4ai closes this gap with a self-hosted MCP server."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What databases does health4ai support?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A Supabase project you own. The iOS app signs in with Supabase Auth and writes through a Supabase Edge Function, so plain Postgres such as Neon or a self-hosted database is not supported. Supabase's free tier covers personal use."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is health4ai open source?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. The iOS app and MCP server are both open source on GitHub at github.com/jefflitt1/health4ai."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does health4ai store my health data?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. Your health data syncs directly to your own database. health4ai never stores, transmits, or has access to your health data."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What Apple Health metrics does health4ai sync?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "health4ai syncs all major HealthKit metrics: steps, heart rate, HRV, sleep stages, workouts, weight, VO2 max, blood oxygen, body temperature, blood pressure, respiratory rate, blood glucose, and all dietary nutrition data."
+      }
+    }
+  ]
+}
+</script>
+</Layout>
+
+<WaitlistClient />
