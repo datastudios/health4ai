@@ -7,8 +7,8 @@ interface Props {
   ogUrl?: string;
 }
 const {
-  title = 'health4.ai — Apple Health data for AI',
-  description = 'Free iOS app that connects Apple Health to Claude, ChatGPT, Cursor, and any AI. Ask about your sleep, recovery, and fitness in plain language.',
+  title = 'health4.ai — Apple Health MCP for Claude, Cursor & ChatGPT',
+  description = 'Apple Health MCP that syncs HealthKit to your own Supabase/Postgres, then serves Claude, Cursor, ChatGPT, and Ollama locally. Own your data — free iOS app + open-source MCP server.',
   ogType = 'website',
   ogUrl = 'https://health4.ai',
 } = Astro.props;
@@ -42,7 +42,7 @@ const metaPixelId = import.meta.env.PUBLIC_META_PIXEL_ID as string | undefined;
       "@type": "SoftwareApplication",
       "name": "health4.ai",
       "url": "https://health4.ai",
-      "description": "Free iOS app that connects Apple Health to Claude, ChatGPT, Cursor, and any AI. Ask about your sleep, recovery, and fitness in plain language.",
+      "description": "Apple Health MCP that syncs HealthKit to your own Supabase/Postgres, then serves Claude, Cursor, ChatGPT, and Ollama locally.",
       "applicationCategory": "HealthApplication",
       "operatingSystem": "iOS",
       "softwareVersion": "1.0",
