@@ -3,9 +3,9 @@ import Layout from '../layouts/Layout.astro';
 import HomeHero from '../components/HomeHero.astro';
 import HomeDetails from '../components/HomeDetails.astro';
 import BrandLogo from '../components/BrandLogo.astro';
-const SUPABASE_URL = import.meta.env.PUBLIC_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
+import WaitlistClient from '../components/WaitlistClient.astro';
 ---
+
 <Layout>
 <style is:global>
   .ecg-main   { stroke-dasharray: 950; stroke-dashoffset: 950; animation: ecg-draw 3.8s cubic-bezier(0.4,0,0.2,1) infinite; }
@@ -37,6 +37,17 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
     .wl-form .wl-consent { grid-column: 1 / -1; grid-row: 2; }
   }
   .wl-form input:disabled, .wl-form button:disabled { opacity: .5; cursor: default; animation: none; }
+  .wl-next {
+    margin-top: 12px;
+    max-width: 28rem;
+    padding: 12px 14px;
+    border-radius: 12px;
+    text-align: left;
+    background: rgba(255,45,120,0.06);
+    border: 1px solid rgba(255,45,120,0.18);
+  }
+  .wl-next[hidden] { display: none; }
+  .wl-explore[hidden] { display: none; }
   .wl-form:has(:disabled) .wl-consent { cursor: default; pointer-events: none; }
   input[type="email"]:focus-visible { box-shadow: 0 0 0 2px var(--accent) !important; border-color: var(--accent) !important; }
   @media (prefers-reduced-motion: reduce) {
@@ -71,6 +82,22 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
       </button>
     </form>
     <p id="form-status-2" aria-live="polite" class="text-xs mt-3 min-h-[18px]" style="color:var(--muted)"></p>
+    <div id="waitlist-next-2" class="wl-next mx-auto" hidden>
+      <p class="wl-next-title text-xs font-semibold text-white mb-2">While you wait</p>
+      <ul class="space-y-1.5 text-xs leading-relaxed" style="color:var(--muted)">
+        <li><a href="/setup" class="underline hover:no-underline" style="color:var(--accent-light)">Read the ~15-minute setup checklist →</a></li>
+        <li><a href="/compare" class="underline hover:no-underline" style="color:var(--accent-light)">See Apple Health MCP positioning vs alternatives →</a></li>
+        <li><a href="/mcp-tools" class="underline hover:no-underline" style="color:var(--accent-light)">Browse MCP tools</a> · <a href="/docs" class="underline hover:no-underline" style="color:var(--accent-light)">Docs</a></li>
+      </ul>
+    </div>
+    <p class="wl-explore text-xs mt-4" style="color:var(--muted)">
+      Or explore now:
+      <a href="/setup" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Setup</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/compare" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Compare</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/docs" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Docs</a>
+    </p>
   </div>
 </section>
 
@@ -84,6 +111,7 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
     <div class="flex gap-6">
       <a href="/docs" class="hover:text-white transition-colors">Docs</a>
       <a href="/setup" class="hover:text-white transition-colors">Setup</a>
+      <a href="/compare" class="hover:text-white transition-colors">Compare</a>
       <a href="/privacy" class="hover:text-white transition-colors">Privacy</a>
       <a href="/terms" class="hover:text-white transition-colors">Terms</a>
       <a href="/schema.sql" class="hover:text-white transition-colors">schema.sql</a>
@@ -150,91 +178,4 @@ const SUPABASE_ANON_KEY = import.meta.env.PUBLIC_SUPABASE_ANON_KEY;
 </script>
 </Layout>
 
-<script define:vars={{ SUPABASE_URL, SUPABASE_ANON_KEY }}>
-  // Waitlist submission
-  // BUMP THIS whenever the consent label copy changes. consent_source exists to
-  // record WHAT a person agreed to; a version that silently goes stale defeats
-  // the column. The copy it versions lives on the two <label> elements above.
-  const CONSENT_COPY_V = 'v3';
-
-  async function submitWaitlist(email, statusEl, formId, honeypotId, consentId) {
-    // Honeypot: bots fill hidden fields, humans don't
-    if (document.getElementById(honeypotId)?.value) {
-      statusEl.textContent = 'Received — we\'ll be in touch.';
-      statusEl.style.color = '#ff6b9d';
-      return;
-    }
-    statusEl.textContent = 'Submitting…';
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/health4ai_waitlist`, {
-        method: 'POST',
-        headers: {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-          'Prefer': 'return=minimal',
-        },
-        // consent_testflight is recorded per row and gates the invite in the
-        // database too. Unticked is a real answer: they still join the list,
-        // they just are not handed to Apple.
-        body: JSON.stringify({
-          email,
-          consent_testflight: !!document.getElementById(consentId)?.checked,
-          consent_source: `web:${formId}:${CONSENT_COPY_V}`,
-        }),
-      });
-      if (res.ok || res.status === 409) {
-        // The 409 branch must not imply the consent landed. anon holds INSERT
-        // only, so a repeat submit cannot update consent_testflight on the
-        // existing row — the tick is genuinely discarded. Saying "you're already
-        // on the list" and nothing else would tell someone who deliberately
-        // asked for the beta that everything is fine. Wiring an anon PATCH keyed
-        // on email is an enumeration surface and needs Mark Vasquez first.
-        const consented = !!document.getElementById(consentId)?.checked;
-        statusEl.textContent = res.status === 409
-          ? (consented
-              ? "You're already on the list. Reply to our launch email to join the beta."
-              : "You're already on the list.")
-          : "Received — we'll be in touch.";
-        statusEl.style.color = '#ff6b9d';
-        window.posthog?.capture(
-          res.ok ? 'waitlist_signup' : 'waitlist_duplicate',
-          { form: formId, testflight_consent: consented }
-        );
-        // Lock the controls. Leaving the checkbox live after a successful
-        // submit lets someone tick it and receive no signal that the tick did
-        // nothing.
-        if (res.ok) {
-          const form = document.getElementById(consentId)?.form;
-          form?.querySelectorAll('input, button').forEach((el) => { el.disabled = true; });
-        }
-      } else {
-        window.posthog?.capture('waitlist_error', { form: formId, status: res.status });
-        throw new Error(res.status);
-      }
-    } catch {
-      statusEl.textContent = 'Something went wrong. Try again.';
-      statusEl.style.color = '#ff5577';
-      window.posthog?.capture('waitlist_error', { form: formId, status: 'network_error' });
-    }
-  }
-  // Consider-and-abandon is invisible in waitlist_signup alone.
-  ['tf-consent-1', 'tf-consent-2'].forEach((id) => {
-    document.getElementById(id)?.addEventListener('change', (e) => {
-      window.posthog?.capture('waitlist_consent_toggled', {
-        form: id === 'tf-consent-1' ? 'hero' : 'bottom',
-        checked: e.target.checked,
-      });
-    });
-  });
-
-  document.getElementById('waitlist-form')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await submitWaitlist(document.getElementById('email-input').value, document.getElementById('form-status'), 'hero', 'hp-1', 'tf-consent-1');
-  });
-  document.getElementById('waitlist-form-2')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    await submitWaitlist(document.getElementById('email-input-2').value, document.getElementById('form-status-2'), 'bottom', 'hp-2', 'tf-consent-2');
-  });
-
-</script>
+<WaitlistClient />
