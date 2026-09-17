@@ -2,8 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 ---
 <Layout
-  title="health4.ai vs Health Auto Export, VitalTrends & claude.ai — Apple Health MCP comparison"
-  description="Honest comparison of every way to give an AI agent access to Apple Health data: health4.ai, Health Auto Export, ChatGPT Health, export+npx MCP, VitalTrends, and manual XML export."
+  title="Apple Health MCP comparison — vs Health Auto Export & export-file MCP"
+  description="Compare Apple Health MCP options: health4.ai (own Supabase/Postgres + local MCP for Claude/Cursor) vs Health Auto Export same-WiFi TCP and neiltron/apple-health-mcp export+npx."
 >
   <nav class="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
     <a href="/" class="text-green-400 font-bold text-lg tracking-tight hover:opacity-80 transition-opacity">health4.ai</a>
@@ -21,13 +21,17 @@ import Layout from '../layouts/Layout.astro';
     <!-- ─── Hero ─── -->
     <section id="hero" class="mb-16 max-w-3xl">
       <h1 class="text-2xl sm:text-3xl font-bold text-white mb-4 leading-tight">
-        health4.ai vs alternatives — Apple Health MCP &amp; HealthKit AI agent access compared
+        Apple Health MCP compared — own Postgres vs Health Auto Export &amp; export-file MCP
       </h1>
       <p class="text-neutral-400 text-sm leading-relaxed mb-4">
-        Apple has no server-side HealthKit API. There is no webhook, no OAuth flow, no REST endpoint that lets a remote server pull your Health data. Every sync must originate from your iPhone — which means the tool you choose to bridge that gap determines whether your AI agent can reach your health data at all.
+        Apple has no server-side HealthKit API. Every sync must originate from your iPhone — so the bridge you pick decides whether Claude, Cursor, or ChatGPT can reach your health data at all.
+      </p>
+      <p class="text-neutral-400 text-sm leading-relaxed mb-4">
+        <strong class="text-neutral-300 font-medium">health4.ai's wedge:</strong> Apple Health → a Supabase/Postgres database you own → a local MCP server for Claude, Claude Code, Cursor, ChatGPT, and Ollama. Continuous <code class="text-amber-400 text-xs">HKObserverQuery</code> sync — not same-WiFi phone TCP, and not a one-shot XML export.
       </p>
       <p class="text-neutral-400 text-sm leading-relaxed">
-        This page compares the realistic options available today: health4.ai, Health Auto Export, ChatGPT Health, export-file + npx MCP paths, the claude.ai native connector, VitalTrends, and manual XML export. We've tried to be honest about where each tool wins and where it doesn't.
+        This page compares the realistic options today: health4.ai, Health Auto Export, ChatGPT Health, neiltron/apple-health-mcp-style export+npx MCP, the claude.ai native connector, VitalTrends, and manual XML export. Ready to try the own-DB path? Start with the
+        <a href="/setup" class="text-green-400 hover:underline">~15-minute Apple Health MCP setup</a>.
       </p>
     </section>
 
@@ -121,12 +125,12 @@ import Layout from '../layouts/Layout.astro';
 
     <!-- ─── Export + npx MCP ─── -->
     <section id="export-npx" class="mb-14 max-w-3xl">
-      <h2 class="text-white font-semibold text-base mb-4">Export-file + npx MCP (neiltron-style)</h2>
+      <h2 class="text-white font-semibold text-base mb-4">Export-file + npx MCP (neiltron/apple-health-mcp)</h2>
       <p class="text-neutral-400 text-sm leading-relaxed mb-3">
-        Some open-source paths take a one-shot Apple Health XML/CSV export and wrap it in an MCP server you can start with <code class="text-amber-400 text-xs">npx</code>. That is a fine weekend project: zero iOS app, fast to try, and useful for a static snapshot.
+        Projects like <a href="https://github.com/neiltron/apple-health-mcp" target="_blank" rel="noopener" class="text-green-400 hover:underline">neiltron/apple-health-mcp</a> take a one-shot Apple Health XML/CSV export and wrap it in an MCP server you can often start with <code class="text-amber-400 text-xs">npx</code>. That is a fine weekend project: zero iOS app, fast to try, and useful for a static snapshot.
       </p>
       <p class="text-neutral-400 text-sm leading-relaxed">
-        The trade-off is freshness. You re-export whenever you want new data; there is no continuous HealthKit observer. health4.ai is the opposite bet — an iOS app that keeps syncing so agents always see recent samples. We do not publish an npx one-liner yet; install is still clone + Python (see <a href="/setup" class="text-green-400 hover:underline">/setup</a>).
+        The trade-off is freshness. You re-export whenever you want new data; there is no continuous HealthKit observer and no always-on Postgres of your own. health4.ai is the opposite bet — an iOS app that keeps syncing into your Supabase so Claude/Cursor agents always see recent samples. We do not publish an npx one-liner yet; install is still clone + Python (see <a href="/setup" class="text-green-400 hover:underline">Apple Health MCP setup</a>).
       </p>
     </section>
 

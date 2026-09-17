@@ -57,7 +57,12 @@
       <div class="text-xs font-semibold uppercase tracking-widest mb-4" style="color:var(--accent)">Your database, your rules</div>
       <h2 class="text-3xl font-extrabold tracking-tight text-white mb-4">Set up once.<br>Own your data forever.</h2>
       <p style="color:var(--muted)" class="text-base leading-relaxed">
-        health4.ai syncs to a Supabase project you create and own. Run the schema, deploy one Edge Function, sign in from the iOS app. No subscriptions, no health4.ai server, no lock-in.
+        health4.ai syncs Apple Health into a Supabase Postgres project you create and own. Run the schema, deploy one Edge Function, sign in from the iOS app — then point a local MCP server at that database for Claude and Cursor. No subscriptions, no health4.ai server, no lock-in.
+      </p>
+      <p class="mt-4 text-sm" style="color:var(--muted)">
+        <a href="/setup" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Apple Health → Supabase → MCP setup</a>
+        <span aria-hidden="true"> · </span>
+        <a href="/compare" class="hover:text-white transition-colors underline-offset-2 hover:underline" style="color:var(--accent-light)">Compare Apple Health MCP options</a>
       </p>
     </div>
 
@@ -96,7 +101,7 @@
       {[
         { n:'01', title:'Install the iOS app', body:'Tap to authorize HealthKit. Background sync starts immediately — HKObserverQuery + BGProcessingTask push every new sample as it arrives, without opening the app.', icon:'📱' },
         { n:'02', title:'Connect your database', body:'Create a Supabase project you own, run the schema, deploy the ingest function. Your decade of health history lands on day one.', icon:'🗄️' },
-        { n:'03', title:'Ask your AI anything', body:'Add one line to your Claude Desktop or Cursor config. Then ask: "How\'s my sleep debt this week?" "When was my HRV last above 70?" "Am I ready to train tomorrow?"', icon:'🤖' },
+        { n:'03', title:'Ask Claude / Cursor anything', body:'Add the Apple Health MCP server to Claude Desktop, Claude Code, or Cursor. Then ask: "How\'s my sleep debt this week?" "When was my HRV last above 70?" "Am I ready to train tomorrow?"', icon:'🤖' },
       ].map(({ n, title, body, icon }) => (
         <div class="rounded-2xl p-6 flex flex-col" style="background:rgba(15,18,37,0.6);border:1px solid rgba(255,255,255,0.07)">
           <div class="flex items-center gap-3 mb-5">
