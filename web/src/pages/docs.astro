@@ -2,8 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 ---
 <Layout
-  title="Docs — health4.ai setup, MCP tools & guides"
-  description="health4.ai documentation hub: 15-minute setup checklist, MCP tools reference, comparisons, and GitHub guides for Apple Health + AI."
+  title="Apple Health MCP Docs — setup for Claude & Cursor | health4.ai"
+  description="Docs hub for Apple Health MCP: ~15-minute Apple Health → Supabase → MCP setup for Claude and Cursor, tools reference, and comparisons vs Health Auto Export."
 >
   <nav class="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
     <a href="/" class="text-green-400 font-bold text-lg tracking-tight hover:opacity-80 transition-opacity">health4.ai</a>
@@ -18,17 +18,17 @@ import Layout from '../layouts/Layout.astro';
   <main class="px-6 py-12 max-w-5xl mx-auto">
     <div class="mb-14 max-w-2xl">
       <div class="text-green-500 text-xs font-mono mb-3 tracking-widest uppercase">Documentation</div>
-      <h1 class="text-3xl font-bold text-white mb-4">Docs</h1>
+      <h1 class="text-3xl font-bold text-white mb-4">Apple Health MCP docs</h1>
       <p class="text-neutral-400 text-sm leading-relaxed">
-        Short links to everything you need to run health4.ai — from a verified ~15-minute setup to the MCP tools reference and honest comparisons.
+        Everything you need to run Apple Health MCP with health4.ai — from a verified ~15-minute HealthKit → your Supabase → local MCP path for Claude and Cursor, to the tools reference and honest comparisons.
       </p>
     </div>
 
     <section class="mb-16 grid sm:grid-cols-2 gap-4">
       <a href="/setup" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
         <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Start here</div>
-        <h2 class="text-white font-semibold text-base mb-2">Setup checklist</h2>
-        <p class="text-neutral-500 text-sm leading-relaxed">Verified ~15-minute path: Supabase → schema → edge function → invite-only TestFlight → MCP server → verify tools.</p>
+        <h2 class="text-white font-semibold text-base mb-2">Apple Health → Supabase → MCP setup</h2>
+        <p class="text-neutral-500 text-sm leading-relaxed">Verified ~15-minute path: Supabase/Postgres → schema → edge function → invite-only TestFlight → MCP for Claude/Cursor → verify tools.</p>
       </a>
       <a href="/mcp-tools" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
         <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Reference</div>
@@ -37,8 +37,8 @@ import Layout from '../layouts/Layout.astro';
       </a>
       <a href="/compare" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
         <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Positioning</div>
-        <h2 class="text-white font-semibold text-base mb-2">Compare alternatives</h2>
-        <p class="text-neutral-500 text-sm leading-relaxed">health4.ai vs Health Auto Export, ChatGPT Health, export+npx MCP, and more.</p>
+        <h2 class="text-white font-semibold text-base mb-2">Apple Health MCP vs alternatives</h2>
+        <p class="text-neutral-500 text-sm leading-relaxed">Own-DB + MCP vs Health Auto Export same-WiFi TCP, neiltron export+npx MCP, ChatGPT Health, and more.</p>
       </a>
       <a href="/how-it-works" class="block border border-neutral-800 rounded-lg p-6 bg-neutral-900/40 hover:border-green-900/50 transition-colors">
         <div class="text-green-400 text-xs font-mono mb-2 uppercase tracking-wider">Architecture</div>
