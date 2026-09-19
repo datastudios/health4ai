@@ -81,6 +81,8 @@ cp mcp-server/.env.example mcp-server/.env
 pip install -r mcp-server/requirements.txt
 ```
 
+Or install the published package with `pip install health4ai` and run `health4ai` instead of `python mcp-server/main.py` (same env vars).
+
 - `DATABASE_URL` — your project's **Transaction pooler** connection string. The password in it is
   your **database password**, not the service_role key or the anon key.
 - `HEALTHKIT_USER_ID` — the **UID** you copied in Step 3. It must be that exact UUID; an email
@@ -112,6 +114,8 @@ job: days that have no `healthkit_daily_summaries` row are aggregated from raw s
   }
 }
 ```
+
+If you installed from PyPI, use `"command": "health4ai"` and omit `args`.
 
 **Cursor** — same block in `~/.cursor/mcp.json`.
 

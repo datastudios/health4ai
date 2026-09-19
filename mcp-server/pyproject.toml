@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "health4ai"
+version = "0.1.0"
+description = "Local MCP server that queries Apple Health data from your own Supabase/Postgres for Claude, Cursor, and other MCP clients."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [{name = "Jeff Littell"}]
+keywords = ["mcp", "apple-health", "healthkit", "supabase", "claude", "cursor"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = [
+    "fastmcp>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://health4.ai"
+Repository = "https://github.com/jefflitt1/health4ai"
+Issues = "https://github.com/jefflitt1/health4ai/issues"
+Documentation = "https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md"
+
+[project.scripts]
+health4ai = "health4ai.server:main"
+
+[tool.setuptools.packages.find]
+include = ["health4ai*"]

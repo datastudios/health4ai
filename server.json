@@ -1,0 +1,41 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.jefflitt1/health4ai",
+  "title": "health4ai",
+  "description": "Query your Apple Health data from your own Supabase/Postgres via local MCP.",
+  "version": "0.1.0",
+  "websiteUrl": "https://health4.ai",
+  "repository": {
+    "url": "https://github.com/jefflitt1/health4ai",
+    "source": "github",
+    "id": "1273310648",
+    "subfolder": "mcp-server"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "health4ai",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DATABASE_URL",
+          "description": "Postgres connection string for your Supabase project (transaction pooler; database password, not a service-role key).",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "HEALTHKIT_USER_ID",
+          "description": "UUID of the Supabase Auth user whose HealthKit data to query.",
+          "isRequired": true,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

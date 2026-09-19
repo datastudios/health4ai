@@ -18,6 +18,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
 import main  # noqa: E402
 import tools  # noqa: E402
+from health4ai import server as server_mod  # noqa: E402
 
 VALID = "9f1c2a4e-7b3d-4c5e-8a6f-0d1e2f3a4b5c"
 
@@ -62,6 +63,7 @@ def test_startup_accepts_a_real_uuid():
 
 def test_hosted_auth_path_and_http_transport_are_gone():
     assert not hasattr(main, "_resolve_user_from_mcp_key")
-    src = pathlib.Path(main.__file__).read_text()
+    assert not hasattr(server_mod, "_resolve_user_from_mcp_key")
+    src = pathlib.Path(server_mod.__file__).read_text()
     for token in ("healthkit_api_keys", "MCP_AUTH_ENABLED", "--transport", "http_app"):
-        assert token not in src.split('"""', 2)[2], f"{token} still present in main.py code"
+        assert token not in src.split('"""', 2)[2], f"{token} still present in server.py code"
