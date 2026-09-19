@@ -33,13 +33,21 @@ import BrandLogo from './BrandLogo.astro';
     <div class="max-w-xl">
       <div class="inline-flex items-center gap-2 text-xs font-semibold border rounded-full px-3 py-1 mb-7" style="color:var(--accent);border-color:var(--border);background:rgba(255,45,120,0.06)">
         <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background:var(--accent)"></span>
-        Free · Coming to App Store
+        Free · App Store review in progress
       </div>
       <h1 class="text-4xl sm:text-[3.25rem] font-extrabold leading-[1.08] tracking-tight text-white mb-5">
         Apple Health MCP<br><span style="color:var(--accent)">for Claude &amp; Cursor.</span>
       </h1>
-      <p class="text-base leading-relaxed mb-8" style="color:var(--muted)">
-        Sync Apple Health to your own Supabase/Postgres, then query it live from Claude, Claude Code, Cursor, ChatGPT, or Ollama via a local MCP server. Continuous HealthKit sync — not a one-shot export.
+      <p class="text-base leading-relaxed mb-5" style="color:var(--muted)">
+        Your Apple Health data stays in a Supabase/Postgres database you own — health4.ai does not keep a copy. Sync continuously from HealthKit, then ask Claude, Claude Code, Cursor, ChatGPT, or Ollama via a local MCP server.
+      </p>
+      <p class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs font-semibold mb-8" style="color:#e2c8d4">
+        <span class="sr-only">Three steps: </span>
+        <span class="px-2.5 py-1 rounded-md" style="background:rgba(255,45,120,0.08);border:1px solid rgba(255,45,120,0.18)">Sync Apple Health</span>
+        <span aria-hidden="true" style="color:var(--muted)">→</span>
+        <span class="px-2.5 py-1 rounded-md" style="background:rgba(255,45,120,0.08);border:1px solid rgba(255,45,120,0.18)">Your database</span>
+        <span aria-hidden="true" style="color:var(--muted)">→</span>
+        <span class="px-2.5 py-1 rounded-md" style="background:rgba(255,45,120,0.08);border:1px solid rgba(255,45,120,0.18)">Ask Claude/Cursor</span>
       </p>
 
       <!-- Live metric pills -->

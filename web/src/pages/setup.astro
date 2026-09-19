@@ -3,7 +3,7 @@ import Layout from '../layouts/Layout.astro';
 ---
 <Layout
   title="Setup Apple Health MCP — HealthKit → Supabase → Claude in ~15 min"
-  description="~15-minute Apple Health MCP setup: sync HealthKit to your own Supabase/Postgres, then connect Claude, Claude Code, or Cursor via a local MCP server."
+  description="~15-minute Apple Health MCP setup: your health data stays in a Supabase/Postgres database you own. Then Claude, Claude Code, or Cursor can query sleep, HRV, and more via a local MCP server."
 >
   <nav class="flex items-center justify-between px-6 py-5 max-w-5xl mx-auto">
     <a href="/" class="text-green-400 font-bold text-lg tracking-tight hover:opacity-80 transition-opacity">health4.ai</a>
@@ -20,15 +20,15 @@ import Layout from '../layouts/Layout.astro';
       <div class="text-green-500 text-xs font-mono mb-3 tracking-widest uppercase">Verified checklist</div>
       <h1 class="text-3xl font-bold text-white mb-4">Apple Health → Supabase → MCP in ~15 minutes</h1>
       <p class="text-neutral-400 text-sm leading-relaxed mb-3">
-        End-to-end Apple Health MCP path: HealthKit on your iPhone → a Supabase/Postgres project you own → local MCP tools in Claude, Claude Code, or Cursor.
-        Full detail lives in
-        <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" target="_blank" rel="noopener" class="text-green-400 hover:underline">docs/SETUP.md</a>.
-        Prefer a comparison first? See
-        <a href="/compare" class="text-green-400 hover:underline">Apple Health MCP vs Health Auto Export</a>.
+        Your Apple Health data lives in a Supabase/Postgres database you own. health4.ai does not keep a copy. About 15 minutes of setup, then Claude or Cursor can query sleep, HRV, workouts, and more.
+      </p>
+      <p class="text-neutral-500 text-sm leading-relaxed mb-3">
+        Path: HealthKit on your iPhone → your database → local MCP tools in Claude, Claude Code, or Cursor.
+        Full detail lives in <a href="https://github.com/jefflitt1/health4ai/blob/main/docs/SETUP.md" target="_blank" rel="noopener" class="text-green-400 hover:underline">docs/SETUP.md</a>.
+        Prefer a comparison first? See <a href="/compare" class="text-green-400 hover:underline">Apple Health MCP vs Health Auto Export</a>.
       </p>
       <p class="text-neutral-500 text-xs leading-relaxed">
-        The iOS app is <strong class="text-neutral-400 font-medium">invite-only TestFlight</strong> right now — join the
-        <a href="/#waitlist" class="text-green-400 hover:underline">waitlist</a> and check the consent box to request a beta invite. There is no public TestFlight link.
+        The iOS app is <strong class="text-neutral-400 font-medium">invite-only TestFlight</strong> right now — join the <a href="/#waitlist" class="text-green-400 hover:underline">waitlist</a> and check the consent box to request a beta invite. There is no public TestFlight link.
       </p>
     </div>
 
@@ -45,14 +45,14 @@ import Layout from '../layouts/Layout.astro';
         <li class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">2</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Run schema.sql</div>
+            <div class="text-white text-sm font-medium mb-1">Create the health tables</div>
             <p class="text-neutral-500 text-sm leading-relaxed mb-2">Paste and run <a href="/schema.sql" class="text-green-400 hover:underline">health4.ai/schema.sql</a> in the SQL editor. Do <strong class="text-neutral-400 font-medium">not</strong> use <code class="text-amber-400 text-xs">supabase db push</code> on a fresh project.</p>
           </div>
         </li>
         <li class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">3</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Deploy the edge function</div>
+            <div class="text-white text-sm font-medium mb-1">Deploy the ingest function</div>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300 mb-2"><code>git clone https://github.com/jefflitt1/health4ai.git
 cd health4ai
 supabase functions deploy healthkit-ingest --project-ref &lt;ref&gt; --no-verify-jwt</code></pre>
@@ -74,7 +74,7 @@ supabase functions deploy healthkit-ingest --project-ref &lt;ref&gt; --no-verify
         <li class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">5</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Clone mcp-server &amp; install deps</div>
+            <div class="text-white text-sm font-medium mb-1">Install the local MCP server</div>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>cd health4ai/mcp-server
 pip install -r requirements.txt
 cp .env.example .env</code></pre>
@@ -83,7 +83,7 @@ cp .env.example .env</code></pre>
         <li class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">6</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Set .env</div>
+            <div class="text-white text-sm font-medium mb-1">Point MCP at your database</div>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>DATABASE_URL=postgresql://...   # transaction pooler, database password
 HEALTHKIT_USER_ID=&lt;your auth UID&gt;</code></pre>
           </div>
@@ -91,7 +91,7 @@ HEALTHKIT_USER_ID=&lt;your auth UID&gt;</code></pre>
         <li class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">7</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Add Claude / Cursor MCP JSON</div>
+            <div class="text-white text-sm font-medium mb-1">Connect Claude or Cursor</div>
             <pre class="bg-neutral-900 border border-neutral-800 rounded-lg p-4 overflow-x-auto text-xs text-neutral-300"><code>{`{
   "mcpServers": {
     "health4ai": {
@@ -110,7 +110,7 @@ HEALTHKIT_USER_ID=&lt;your auth UID&gt;</code></pre>
         <li class="flex gap-4 items-start">
           <span class="text-green-500 font-mono font-bold text-sm w-6 shrink-0">8</span>
           <div>
-            <div class="text-white text-sm font-medium mb-1">Verify tools list</div>
+            <div class="text-white text-sm font-medium mb-1">Ask Claude for a health summary</div>
             <p class="text-neutral-500 text-sm leading-relaxed">
               In Claude Code run <code class="text-amber-400 text-xs">/mcp</code> and confirm <code class="text-green-400 text-xs">health4ai</code> is connected with 11 tools.
               Then ask: <em class="text-neutral-400">"Give me a health summary for the last 7 days."</em>
