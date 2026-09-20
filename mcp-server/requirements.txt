@@ -1,3 +1,7 @@
 fastmcp>=2.0.0
 psycopg2-binary>=2.9.0
 python-dotenv>=1.0.0
+# Python ships no timezone database on Windows, so zoneinfo cannot resolve
+# HEALTH4AI_TZ there and fails at startup claiming the zone name is invalid.
+# Harmless on Linux/macOS, which use the system database.
+tzdata>=2024.1

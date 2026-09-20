@@ -816,10 +816,18 @@ def get_sleep(days: int = 7) -> dict:
     total_hours = [n["total_minutes"] / 60 for n in sorted_nights if n["total_minutes"] > 0]
     avg_hours = round(sum(total_hours) / len(total_hours), 1) if total_hours else None
 
+    # Same gap get_workouts had: an empty nights list came back unlabelled, so a
+    # window with no sleep data was indistinguishable from a window in which the
+    # user did not sleep. Sleep is the metric most likely to be absent on this
+    # account -- 15 nights recorded in two years -- which makes it the most
+    # likely to produce a confidently wrong answer.
+    note = _absence_note(SLEEP, uid, len(sorted_nights))
+
     return {
         "period_days": days,
         "avg_sleep_hours": avg_hours,
         "nights": sorted_nights,
+        **({"data_status": note} if note else {}),
     }
 
 
@@ -1059,6 +1067,12 @@ def query_metric(
 def get_workouts(days: int = 30, limit: int = 20) -> dict:
     """
     Recent workouts with type, duration, distance, and calories.
+
+    IMPORTANT: when total_workouts is 0 the response carries a 'data_status' block.
+    Read it before saying anything. HealthKit returns a denied permission and a
+    genuinely rest-filled window as the same empty result, so a bare zero here reads
+    as "you did not exercise" when the real cause may be that workouts were never
+    granted to this app. Do not assert the user did not train without checking it.
     """
     uid = current_user_id.get()
     since = _since(days)
@@ -1067,13 +1081,24 @@ def get_workouts(days: int = 30, limit: int = 20) -> dict:
     workouts = []
     for r in rows:
         meta = r.get("metadata") or {}
+        # str(started_at)[:10] took the UTC date. A 7:43pm ET walk on 2025-02-12
+        # is 00:43 UTC on the 13th, and was reported as happening on the 13th --
+        # one such workout is already in this account's history, and every
+        # evening workout from here on would land on the wrong day. _local_date
+        # was already in this module; this call site just never used it.
+        dist_m = meta.get("total_distance_meters")
+        cal = meta.get("total_energy_burned_cal")
         workouts.append({
-            "date": str(r["started_at"])[:10],
+            "date": _local_date(str(r["started_at"])),
             "started_at": str(r["started_at"]),
             "workout_type": meta.get("workout_type", "unknown"),
             "duration_minutes": round(meta.get("duration_seconds", 0) / 60, 1),
-            "distance_km": round(meta.get("total_distance_meters", 0) / 1000, 2) if meta.get("total_distance_meters") else None,
-            "calories_burned": meta.get("total_energy_burned_cal"),
+            "distance_km": round(dist_m / 1000, 2) if dist_m else None,
+            # Reported in miles as well: every other record of these runs -- the
+            # Strava history, the exercise log, the consolidated sheet -- is in
+            # miles, and a bare "6.45" invites being read as the wrong unit.
+            "distance_mi": round(dist_m / 1609.344, 2) if dist_m else None,
+            "calories_burned": round(cal) if cal is not None else None,
             "source": r.get("source_device"),
         })
 
@@ -1082,12 +1107,19 @@ def get_workouts(days: int = 30, limit: int = 20) -> dict:
     for w in workouts:
         types[w["workout_type"]] = types.get(w["workout_type"], 0) + 1
 
+    # _absence_note already existed in this module and every other zero-returning
+    # tool called it; this one did not, so an empty window came back as a bare
+    # "total_workouts: 0" with nothing to distinguish a rest week from a revoked
+    # permission.
+    note = _absence_note(WORKOUT, uid, len(workouts))
+
     return {
         "period_days": days,
         "total_workouts": len(workouts),
         "total_duration_hours": round(total_duration / 60, 1),
         "by_type": types,
         "workouts": workouts,
+        **({"data_status": note} if note else {}),
     }
 
 
