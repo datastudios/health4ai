@@ -1068,11 +1068,14 @@ def get_workouts(days: int = 30, limit: int = 20) -> dict:
     """
     Recent workouts with type, duration, distance, and calories.
 
-    IMPORTANT: when total_workouts is 0 the response carries a 'data_status' block.
-    Read it before saying anything. HealthKit returns a denied permission and a
-    genuinely rest-filled window as the same empty result, so a bare zero here reads
-    as "you did not exercise" when the real cause may be that workouts were never
-    granted to this app. Do not assert the user did not train without checking it.
+    IMPORTANT: read the 'data_status' block whenever one is present, before saying
+    anything. It appears in two cases, and both are cases where the numbers do not
+    mean what they look like. When total_workouts is 0: HealthKit returns a denied
+    permission and a genuinely rest-filled window as the same empty result, so a bare
+    zero reads as "you did not exercise" when workouts may simply never have been
+    granted to this app. When workouts ARE returned but the newest is old: the feed
+    has stopped, and the window looks healthy because it is full of history. In
+    neither case may you assert the user did not train.
     """
     uid = current_user_id.get()
     since = _since(days)
@@ -1112,6 +1115,30 @@ def get_workouts(days: int = 30, limit: int = 20) -> dict:
     # "total_workouts: 0" with nothing to distinguish a rest week from a revoked
     # permission.
     note = _absence_note(WORKOUT, uid, len(workouts))
+
+    # A NON-empty result can be just as misleading. _absence_note only fires on a
+    # zero, so a window holding ten workouts that all stopped on 2026-09-17 came
+    # back looking perfectly healthy -- the caller sees rows and has no way to
+    # learn the feed died a week ago. It is the same silence _absence_note exists
+    # to break, on the path nobody checked because it returns data.
+    if note is None and workouts:
+        newest = _newest_started_at(rows)
+        if newest is not None:
+            age_h = (datetime.now(timezone.utc) - newest).total_seconds() / 3600
+            limit_h = _FEED_CADENCE_DAYS["workouts"] * 24
+            if age_h > limit_h:
+                note = {
+                    "status": "feed_stale",
+                    "newest_workout_at": newest.isoformat(),
+                    "days_since_newest_workout": round(age_h / 24, 1),
+                    "guidance": (
+                        "These workouts are real but the feed has recorded nothing new in "
+                        f"{round(age_h / 24)} days. Do not describe this as a training break: "
+                        "an absence of workout rows is not evidence of an absence of training, "
+                        "and other feeds from the same device may still be arriving normally. "
+                        "Report the gap as a data gap and say when the newest one was."
+                    ),
+                }
 
     return {
         "period_days": days,
@@ -1285,6 +1312,50 @@ def _newest_started_at(*row_lists: list[dict]) -> datetime | None:
     return newest
 
 
+# How long each feed may go quiet before silence is itself the finding. These
+# are not thresholds on the activity -- they are thresholds on the PIPELINE.
+# Heart rate lands hourly; a run happens when it happens, so workouts get a
+# wider window before absence means anything.
+_FEED_CADENCE_DAYS = {
+    "hrv": 3,
+    "resting_hr": 3,
+    "sleep": 3,
+    "workouts": 10,
+    "steps": 2,
+}
+
+
+def _feed_staleness(feeds: dict[str, list[dict]], now: datetime) -> dict:
+    """Per-feed age, so one live feed cannot vouch for a dead one.
+
+    Added 2026-09-25. _data_status took the newest sample across every feed at
+    once, which is only a valid summary when the feeds fail together. They do
+    not. Workouts stopped arriving on 2026-09-17 while heart rate, steps and
+    sleep kept landing hourly, so the brief reported status "fresh" -- newest
+    sample minutes old -- with a training-load section built from a dataset that
+    had been dead for eight days. That is the exact failure this function's
+    parent was written to prevent, reintroduced one level down: a check that
+    cannot fail for the thing that actually broke.
+
+    The overall status is kept (callers depend on it) but is now the WORST feed
+    rather than the best, and every feed reports its own age regardless.
+    """
+    out = {}
+    for name, rows in feeds.items():
+        newest = _newest_started_at(rows)
+        cadence_h = _FEED_CADENCE_DAYS.get(name, 3) * 24
+        hours = round((now - newest).total_seconds() / 3600, 1) if newest else None
+        out[name] = {
+            "newest_sample_at": newest.isoformat() if newest else None,
+            "hours_since_newest_sample": hours,
+            "expected_within_hours": cadence_h,
+            "status": "none" if newest is None
+                      else ("fresh" if hours <= cadence_h else "stale"),
+            "samples": len(rows),
+        }
+    return out
+
+
 def _data_status(hrv: list[dict], rhr: list[dict], sleep: list[dict], workouts: list[dict],
                  steps: list[dict], now: datetime | None = None) -> dict:
     """Machine-checkable freshness for the coaching brief.
@@ -1296,23 +1367,56 @@ def _data_status(hrv: list[dict], rhr: list[dict], sleep: list[dict], workouts: 
     now = now or datetime.now(timezone.utc)
     newest = _newest_started_at(hrv, rhr, sleep, workouts, steps)
     hours = round((now - newest).total_seconds() / 3600, 1) if newest else None
+
+    feeds = _feed_staleness(
+        {"hrv": hrv, "resting_hr": rhr, "sleep": sleep,
+         "workouts": workouts, "steps": steps},
+        now,
+    )
+    # Only a feed that HAS data and has stopped counts against the global status.
+    # A feed with nothing at all in the window is genuinely ambiguous -- thirty
+    # quiet days could be a dead pipeline or a month off -- and each tool's own
+    # _absence_note already resolves that with evidence this function does not
+    # have. Counting empties here would put the brief in "partial" for anyone
+    # having a rest month, which is how a warning stops being read.
+    stopped = sorted(n for n, f in feeds.items() if f["status"] == "stale")
+    live = [n for n, f in feeds.items() if f["status"] == "fresh"]
+
     if newest is None:
         status = "none"
+    elif stopped and live:
+        # Reporting "fresh" because SOMETHING arrived recently is what let a
+        # brief cite an eight-day-dead training log as current.
+        status = "partial"
+    elif stopped:
+        status = "stale"
     elif hours <= FRESH_HOURS:
         status = "fresh"
     else:
         status = "stale"
+
     guidance = {
         "fresh": "Data is current; numbers in this brief may be cited.",
+        "partial": (
+            "Some feeds are current and some are not: " + ", ".join(stopped) + " "
+            f"{'have' if len(stopped) > 1 else 'has'} produced nothing within the expected "
+            "window while others are arriving normally. Numbers from the fresh feeds may "
+            "be cited. Say nothing about the quiet ones -- in particular do not describe "
+            "training load, or any absence, as a fact about what the user did. Feeds "
+            "failing separately is a pipeline symptom, not a behaviour signal."
+        ),
         "stale": (f"Newest sample is older than {FRESH_HOURS}h; do not cite any number here as "
                   "current. A gap is device-not-worn unless a pipeline failure is shown."),
         "none": "No samples in the query windows; nothing in this brief describes the current state.",
     }[status]
+
     return {
         "status": status,
         "newest_sample_at": newest.isoformat() if newest else None,
         "hours_since_newest_sample": hours,
         "fresh_threshold_hours": FRESH_HOURS,
+        "stale_feeds": stopped,
+        "feeds": feeds,
         "hrv_samples_14d": len(hrv),
         "sleep_rows_14d": len(sleep),
         "workouts_30d": len(workouts),

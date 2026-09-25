@@ -63,15 +63,58 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(brief["data_status"]["status"], "fresh")
         self.assertLessEqual(brief["data_status"]["hours_since_newest_sample"], 48)
 
-    def test_newest_sample_wins_across_metrics(self):
+    def test_one_live_feed_no_longer_vouches_for_a_dead_one(self):
+        """This replaces test_newest_sample_wins_across_metrics, which asserted the bug.
+
+        Taking the newest sample across all feeds is only a valid summary when the
+        feeds fail together, and they do not. On 2026-09-25 the workout feed had been
+        dead since 2026-09-17 while heart rate, steps and sleep kept landing hourly --
+        so the brief reported status "fresh", newest sample minutes old, alongside a
+        training-load section built entirely from a dataset that had stopped. The old
+        test made that behaviour a requirement, so the defect was protected by a
+        passing suite.
+        """
         old = datetime.now(timezone.utc) - timedelta(days=9)
         newer = datetime.now(timezone.utc) - timedelta(hours=20)
         brief = self._brief_with({
             tools.HRV: [_row(tools.HRV, old, 45.0)],
             tools.WORKOUT: [_row(tools.WORKOUT, newer, 1.0, meta={"workout_type": "Run", "duration_seconds": 1200})],
         })
-        self.assertEqual(brief["data_status"]["status"], "fresh")
-        self.assertEqual(brief["data_status"]["workouts_30d"], 1)
+        ds = brief["data_status"]
+        self.assertEqual(ds["status"], "partial",
+                         "a stopped feed beside a live one is neither fresh nor stale")
+        self.assertIn("hrv", ds["stale_feeds"])
+        self.assertNotIn("workouts", ds["stale_feeds"])
+        self.assertEqual(ds["feeds"]["workouts"]["status"], "fresh")
+        self.assertEqual(ds["workouts_30d"], 1)
+        self.assertIn("hrv", ds["guidance"].lower())
+
+    def test_empty_feed_does_not_degrade_the_status(self):
+        """A rest month must not read as a broken pipeline.
+
+        Absence with no samples at all is ambiguous and each tool's _absence_note
+        resolves it with evidence this function does not have. If empties counted
+        here, anyone who did not train for thirty days would get "partial" forever,
+        and the warning would stop being read -- which is the failure mode this
+        whole block exists to avoid.
+        """
+        recent = datetime.now(timezone.utc) - timedelta(hours=5)
+        brief = self._brief_with({tools.HRV: [_row(tools.HRV, recent, 45.0)]})
+        ds = brief["data_status"]
+        self.assertEqual(ds["status"], "fresh")
+        self.assertEqual(ds["stale_feeds"], [])
+        self.assertEqual(ds["feeds"]["workouts"]["status"], "none")
+
+    def test_every_feed_stopped_is_still_plain_stale(self):
+        old = datetime.now(timezone.utc) - timedelta(days=9)
+        brief = self._brief_with({
+            tools.HRV: [_row(tools.HRV, old, 45.0)],
+            tools.STEPS: [_row(tools.STEPS, old, 5000.0)],
+        })
+        ds = brief["data_status"]
+        self.assertEqual(ds["status"], "stale",
+                         "nothing live means stale, not partial")
+        self.assertEqual(sorted(ds["stale_feeds"]), ["hrv", "steps"])
 
 
 if __name__ == "__main__":
